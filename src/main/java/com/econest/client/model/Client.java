@@ -1,28 +1,25 @@
-package econest.model;
+package com.econest.client.model;
 
-public class Client {
+/**
+ * Base class for every EcoNest client.
+ *
+ * It is abstract because there is no "plain" client: every client is either a
+ * HouseholdClient or an OfficeClient. Both inherit the fields below.
+ */
+public abstract class Client {
 
-    private int clientId;
-    private String clientName;
-    private String email;
-    private String phone;
-    private String address;
-    private String clientType;
+    private int clientId;                    // 0 until the database gives it an id
+    private String name;                     // person's name (household) or company name (office)
+    private ContactDetails contactDetails;   // email, phone, address
 
-    public Client(int clientId,
-                  String clientName,
-                  String email,
-                  String phone,
-                  String address,
-                  String clientType) {
-
+    protected Client(int clientId, String name, ContactDetails contactDetails) {
         this.clientId = clientId;
-        this.clientName = clientName;
-        this.email = email;
-        this.phone = phone;
-        this.address = address;
-        this.clientType = clientType;
+        this.name = name;
+        this.contactDetails = contactDetails;
     }
+
+    /** Each subclass says which type it is. */
+    public abstract ClientType getClientType();
 
     public int getClientId() {
         return clientId;
@@ -32,43 +29,38 @@ public class Client {
         this.clientId = clientId;
     }
 
-    public String getClientName() {
-        return clientName;
+    public String getName() {
+        return name;
     }
 
-    public void setClientName(String clientName) {
-        this.clientName = clientName;
+    public void setName(String name) {
+        this.name = name;
     }
 
+    public ContactDetails getContactDetails() {
+        return contactDetails;
+    }
+
+    public void setContactDetails(ContactDetails contactDetails) {
+        this.contactDetails = contactDetails;
+    }
+
+    // Shortcuts, so teammates can write client.getEmail()
+    // instead of client.getContactDetails().getEmail()
     public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
+        return contactDetails.getEmail();
     }
 
     public String getPhone() {
-        return phone;
-    }
-
-    public void setPhone(String phone) {
-        this.phone = phone;
+        return contactDetails.getPhone();
     }
 
     public String getAddress() {
-        return address;
+        return contactDetails.getAddress();
     }
 
-    public void setAddress(String address) {
-        this.address = address;
-    }
-
-    public String getClientType() {
-        return clientType;
-    }
-
-    public void setClientType(String clientType) {
-        this.clientType = clientType;
+    @Override
+    public String toString() {
+        return "#" + clientId + " " + name + " (" + getClientType() + ")";
     }
 }
