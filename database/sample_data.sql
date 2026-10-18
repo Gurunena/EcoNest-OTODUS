@@ -22,7 +22,6 @@ TRUNCATE TABLE vehicles;
 TRUNCATE TABLE clients;
 TRUNCATE TABLE suppliers;
 TRUNCATE TABLE products;
-SET FOREIGN_KEY_CHECKS = 1;
 
 -- --- products: 3 plants, 2 planters, 2 gardening kits ----------------
 INSERT INTO products (product_id, sku, name, product_type, description, unit_price, eco_rating,
@@ -171,3 +170,5 @@ VALUES (1, 'ORDER_CONFIRMATION', 'amara.silva@example.com',
         'EcoNest order #4 received',
         'We have received your order and will confirm pricing shortly.',
         'FAILED', 4, 4, NULL, 'SMTP connection timed out');
+
+SET FOREIGN_KEY_CHECKS = 1;
