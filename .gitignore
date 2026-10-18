@@ -4,3 +4,6 @@ target/
 out/
 *.class
 *.log
+
+# local database credentials (copy db.properties.example)
+db.properties

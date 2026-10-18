@@ -1,0 +1,7 @@
+# EcoNest database connection settings.
+# Copy this file to db.properties (same folder) and adjust for your machine.
+# db.properties is git-ignored, so your password never gets committed.
+
+url=jdbc:mysql://localhost:3306/econest
+user=root
+password=
