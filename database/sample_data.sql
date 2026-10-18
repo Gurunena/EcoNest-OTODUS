@@ -24,35 +24,36 @@ TRUNCATE TABLE suppliers;
 TRUNCATE TABLE products;
 
 -- --- products: 3 plants, 2 planters, 2 gardening kits ----------------
-INSERT INTO products (product_id, sku, name, product_type, description, unit_price, eco_rating,
-                      species, indoor, care_level, mature_height_cm)
-VALUES (1, 'PLT-0001', 'Peace Lily', 'PLANT',
-        'Air-purifying indoor plant with white blooms.', 1850.00, 'HIGH',
-        'Spathiphyllum wallisii', TRUE, 'EASY', 60),
-       (2, 'PLT-0002', 'Snake Plant', 'PLANT',
-        'Very low maintenance, tolerates low light.', 2200.00, 'EXCELLENT',
-        'Dracaena trifasciata', TRUE, 'EASY', 90),
-       (3, 'PLT-0003', 'Curry Leaf Sapling', 'PLANT',
-        'Outdoor kitchen-garden sapling.', 950.00, 'HIGH',
-        'Murraya koenigii', FALSE, 'MODERATE', 250);
+-- eco_rating is 1 (worst) .. 5 (best). quantity is the on-hand stock count.
+INSERT INTO products (product_id, product_name, category, price, eco_rating, description, quantity,
+                      sku, species, indoor, care_level, mature_height_cm)
+VALUES (1, 'Peace Lily', 'PLANT', 1850.00, 4,
+        'Air-purifying indoor plant with white blooms.', 40,
+        'PLT-0001', 'Spathiphyllum wallisii', TRUE, 'EASY', 60),
+       (2, 'Snake Plant', 'PLANT', 2200.00, 5,
+        'Very low maintenance, tolerates low light.', 25,
+        'PLT-0002', 'Dracaena trifasciata', TRUE, 'EASY', 90),
+       (3, 'Curry Leaf Sapling', 'PLANT', 950.00, 4,
+        'Outdoor kitchen-garden sapling.', 6,
+        'PLT-0003', 'Murraya koenigii', FALSE, 'MODERATE', 250);
 
-INSERT INTO products (product_id, sku, name, product_type, description, unit_price, eco_rating,
-                      material, capacity_litres, diameter_cm, has_drainage)
-VALUES (4, 'PNT-0001', 'Terracotta Pot 25cm', 'PLANTER',
-        'Hand-thrown clay pot with saucer.', 1250.00, 'EXCELLENT',
-        'Terracotta', 8.50, 25, TRUE),
-       (5, 'PNT-0002', 'Recycled Plastic Trough', 'PLANTER',
-        'Made from 100% post-consumer plastic.', 2950.00, 'HIGH',
-        'Recycled plastic', 22.00, 60, TRUE);
+INSERT INTO products (product_id, product_name, category, price, eco_rating, description, quantity,
+                      sku, material, capacity_litres, diameter_cm, has_drainage)
+VALUES (4, 'Terracotta Pot 25cm', 'PLANTER', 1250.00, 5,
+        'Hand-thrown clay pot with saucer.', 60,
+        'PNT-0001', 'Terracotta', 8.50, 25, TRUE),
+       (5, 'Recycled Plastic Trough', 'PLANTER', 2950.00, 4,
+        'Made from 100% post-consumer plastic.', 18,
+        'PNT-0002', 'Recycled plastic', 22.00, 60, TRUE);
 
-INSERT INTO products (product_id, sku, name, product_type, description, unit_price, eco_rating,
-                      piece_count, skill_level)
-VALUES (6, 'KIT-0001', 'Balcony Starter Kit', 'GARDENING_KIT',
-        'Trowel, fork, gloves, coco peat and seed packets.', 4500.00, 'MEDIUM',
-        6, 'BEGINNER'),
-       (7, 'KIT-0002', 'Compost Bin Kit', 'GARDENING_KIT',
-        'Two-chamber home composting bin with aerator.', 7800.00, 'EXCELLENT',
-        4, 'INTERMEDIATE');
+INSERT INTO products (product_id, product_name, category, price, eco_rating, description, quantity,
+                      sku, piece_count, skill_level)
+VALUES (6, 'Balcony Starter Kit', 'GARDENING_KIT', 4500.00, 3,
+        'Trowel, fork, gloves, coco peat and seed packets.', 12,
+        'KIT-0001', 6, 'BEGINNER'),
+       (7, 'Compost Bin Kit', 'GARDENING_KIT', 7800.00, 5,
+        'Two-chamber home composting bin with aerator.', 3,
+        'KIT-0002', 4, 'INTERMEDIATE');
 
 -- --- suppliers -------------------------------------------------------
 INSERT INTO suppliers (supplier_id, name, contact)
@@ -95,15 +96,17 @@ VALUES (1, 'Kasun Rathnayake', '0714567890', 'kasun.r@econest.example.com', 'B12
        (3, 'Nadeesha Fonseka', '0723456789', 'nadeesha.f@econest.example.com', 'B3456789',
         3, 'Kandy', FALSE, '2025-01-20');
 
--- --- current stock (products 3 and 7 are at or below reorder level) ---
-INSERT INTO stock_items (product_id, quantity_on_hand, reorder_level)
-VALUES (1, 40, 10),
-       (2, 25, 10),
-       (3, 6, 8),
-       (4, 60, 15),
-       (5, 18, 5),
-       (6, 12, 4),
-       (7, 3, 3);
+-- --- reorder levels (on-hand counts live in products.quantity above) ---
+-- Products 3 (6 on hand, level 8) and 7 (3 on hand, level 3) are low,
+-- so v_low_stock_items returns two rows.
+INSERT INTO stock_items (product_id, reorder_level)
+VALUES (1, 10),
+       (2, 10),
+       (3, 8),
+       (4, 15),
+       (5, 5),
+       (6, 4),
+       (7, 3);
 
 -- --- stock received from suppliers -----------------------------------
 INSERT INTO stock_in (stock_in_id, product_id, supplier_id, quantity, received_date)

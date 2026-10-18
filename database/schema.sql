@@ -23,18 +23,28 @@ USE econest;
 --                      vehicles, clients, suppliers, products;
 
 -- =====================================================================
--- 1. products  (single table for Product / Plant / Planter / GardeningKit)
---    product_type is the discriminator; the type-specific columns below
---    are only filled in for the matching type.
+-- 1. products
+--    Column names match com.econest.product.dao.ProductDao exactly:
+--    (product_id, product_name, category, price, eco_rating, description,
+--    quantity). Do not rename these without telling the product module owner.
+--
+--    'quantity' is the on-hand stock count and is the single source of
+--    truth for stock levels - see stock_items below, which holds only the
+--    reorder level.
+--
+--    The nullable columns at the bottom are for Plant / Planter /
+--    GardeningKit; only the ones matching 'category' are filled in, and
+--    ProductDao ignores them.
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS products (
     product_id        INT             NOT NULL AUTO_INCREMENT,
-    sku               VARCHAR(32)     NOT NULL,
-    name              VARCHAR(120)    NOT NULL,
-    product_type      ENUM('PLANT', 'PLANTER', 'GARDENING_KIT') NOT NULL,
+    product_name      VARCHAR(120)    NOT NULL,
+    category          VARCHAR(40)     NOT NULL,  -- PLANT | PLANTER | GARDENING_KIT
+    price             DECIMAL(10, 2)  NOT NULL,
+    eco_rating        TINYINT         NOT NULL DEFAULT 3,  -- 1 (worst) .. 5 (best)
     description       VARCHAR(500)        NULL,
-    unit_price        DECIMAL(10, 2)  NOT NULL,
-    eco_rating        ENUM('LOW', 'MEDIUM', 'HIGH', 'EXCELLENT') NOT NULL DEFAULT 'MEDIUM',
+    quantity          INT             NOT NULL DEFAULT 0,  -- units on hand
+    sku               VARCHAR(32)         NULL,  -- optional; ProductDao does not set it
     active            BOOLEAN         NOT NULL DEFAULT TRUE,
     created_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -56,9 +66,11 @@ CREATE TABLE IF NOT EXISTS products (
 
     PRIMARY KEY (product_id),
     UNIQUE KEY uq_products_sku (sku),
-    KEY idx_products_type (product_type),
-    KEY idx_products_name (name),
-    CONSTRAINT chk_products_price CHECK (unit_price >= 0)
+    KEY idx_products_category (category),
+    KEY idx_products_name (product_name),
+    CONSTRAINT chk_products_price CHECK (price >= 0),
+    CONSTRAINT chk_products_quantity CHECK (quantity >= 0),
+    CONSTRAINT chk_products_eco_rating CHECK (eco_rating BETWEEN 1 AND 5)
 ) ENGINE = InnoDB;
 
 -- =====================================================================
@@ -144,19 +156,22 @@ CREATE TABLE IF NOT EXISTS delivery_agents (
 ) ENGINE = InnoDB;
 
 -- =====================================================================
--- 6. stock_items  (inventory.model.StockItem) - current position per product
+-- 6. stock_items  (inventory.model.StockItem)
+--    Holds only the reorder threshold per product. The on-hand count
+--    lives in products.quantity, because ProductDao already reads and
+--    writes it - keeping a second copy here would let the two drift
+--    apart. Read both together through the v_stock_items view below,
+--    which lines up 1:1 with the StockItem model.
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS stock_items (
-    product_id       INT       NOT NULL,
-    quantity_on_hand INT       NOT NULL DEFAULT 0,
-    reorder_level    INT       NOT NULL DEFAULT 0,
-    last_updated     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    product_id    INT       NOT NULL,
+    reorder_level INT       NOT NULL DEFAULT 0,
+    last_updated  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (product_id),
     CONSTRAINT fk_stock_items_product FOREIGN KEY (product_id)
         REFERENCES products (product_id)
         ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT chk_stock_items_qty CHECK (quantity_on_hand >= 0),
     CONSTRAINT chk_stock_items_reorder CHECK (reorder_level >= 0)
 ) ENGINE = InnoDB;
 
@@ -208,7 +223,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
 -- =====================================================================
 -- 9. order_items  (order.model.OrderItem) - unit_price is the price charged
---    at the time of the order, not the current products.unit_price
+--    at the time of the order, not the current products.price
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS order_items (
     order_item_id INT            NOT NULL AUTO_INCREMENT,
@@ -285,20 +300,32 @@ CREATE TABLE IF NOT EXISTS notifications (
 ) ENGINE = InnoDB;
 
 -- =====================================================================
--- Report helpers - read-only views behind report.dao.ReportDao
+-- Report / inventory helper views
 -- =====================================================================
+
+-- StockItem: on-hand count (products.quantity) plus the reorder level,
+-- matching the inventory.model.StockItem fields. Read stock through this
+-- view; write products.quantity and stock_items.reorder_level directly.
+CREATE OR REPLACE VIEW v_stock_items AS
+SELECT p.product_id,
+       p.product_name,
+       p.quantity                       AS quantity_on_hand,
+       COALESCE(s.reorder_level, 0)     AS reorder_level,
+       s.last_updated
+FROM products p
+         LEFT JOIN stock_items s ON s.product_id = p.product_id;
 
 -- LowStockAlert: products at or below their reorder level
 CREATE OR REPLACE VIEW v_low_stock_items AS
 SELECT p.product_id,
        p.sku,
-       p.name,
-       s.quantity_on_hand,
+       p.product_name,
+       p.quantity    AS quantity_on_hand,
        s.reorder_level,
        s.last_updated
 FROM stock_items s
          JOIN products p ON p.product_id = s.product_id
-WHERE s.quantity_on_hand <= s.reorder_level;
+WHERE p.quantity <= s.reorder_level;
 
 -- MonthlySalesSummary: one row per calendar month, cancelled orders excluded
 CREATE OR REPLACE VIEW v_monthly_sales_summary AS

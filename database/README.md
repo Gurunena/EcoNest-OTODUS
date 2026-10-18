@@ -72,38 +72,78 @@ try (Connection conn = DBConnection.getConnection();
 
 | Table | Module | Notes |
 | --- | --- | --- |
-| `products` | product | One table for Product / Plant / Planter / GardeningKit; `product_type` is the discriminator and the type-specific columns are null for other types |
+| `products` | product | Columns match `ProductDao` exactly: `product_id`, `product_name`, `category`, `price`, `eco_rating` (int 1–5), `description`, `quantity`. `quantity` is the on-hand stock count. Nullable Plant / Planter / GardeningKit columns sit at the end and `ProductDao` ignores them |
 | `suppliers` | inventory | |
 | `clients` | client | One table for HouseholdClient / OfficeClient; `ContactDetails` is flattened into the same row |
 | `vehicles` | agent | |
 | `delivery_agents` | agent | `vehicle_id` is unique — one vehicle per agent |
-| `stock_items` | inventory | Keyed by `product_id`; current quantity and reorder level |
+| `stock_items` | inventory | Reorder level only — see the note below |
 | `stock_in` | inventory | Stock received from a supplier |
 | `orders` | order | `total_amount` is the order total; `delivery_address` is a snapshot taken at order time |
-| `order_items` | order | `unit_price` is the price charged then, not today's `products.unit_price` |
+| `order_items` | order | `unit_price` is the price charged then, not today's `products.price` |
 | `delivery_assignments` | delivery | One assignment per order (`order_id` is unique) |
 | `notifications` | notification | Outgoing email queue with `PENDING` / `SENT` / `FAILED` status |
 
-Two read-only views back the reports module:
+Three read-only views:
 
+- `v_stock_items` — on-hand count and reorder level together, matching the
+  `StockItem` model (`product`, `quantityOnHand`, `reorderLevel`)
 - `v_low_stock_items` — products at or below their reorder level (`LowStockAlert`)
 - `v_monthly_sales_summary` — order count, units sold and revenue per month,
   cancelled orders excluded (`MonthlySalesSummary`)
 
+### Where stock levels live
+
+`products.quantity` is the single source of truth for on-hand stock, because
+`ProductDao` already reads and writes it. `stock_items` therefore holds only
+`reorder_level` — if it kept its own copy of the quantity the two would drift
+apart as soon as a product was sold.
+
+For the inventory module that means:
+
+- read stock through `v_stock_items` (it maps 1:1 onto `StockItem`)
+- write the count with `UPDATE products SET quantity = ? WHERE product_id = ?`
+- write the threshold with `UPDATE stock_items SET reorder_level = ? WHERE product_id = ?`
+
+### Open item: OrderDao
+
+`OrderDao` currently inserts into `orders` as
+`(client_id, product_id, quantity, order_date, total_amount, order_status,
+delivery_agent_id)`, which does not match this schema and will fail. The
+`orders` table here is normalized, so that SQL needs:
+
+- `order_status` → `status`
+- `product_id` and `quantity` → one row per product in `order_items`
+  (`order_id`, `product_id`, `quantity`, `unit_price`)
+- `delivery_agent_id` → a row in `delivery_assignments` (`order_id`, `agent_id`,
+  `status`), which is also what the delivery and reports modules read
+
+That change belongs to the order module owner, not to this layer.
+
 ## Notes for the module owners
 
-The model classes that are still empty skeletons (`Product`, `Plant`,
-`Planter`, `GardeningKit`, `EcoRating`, `Client`, `HouseholdClient`,
-`OfficeClient`, `ContactDetails`, `DeliveryAgent`, `Vehicle`, `Order`,
-`OrderItem`, `OrderStatus`, `EmailNotification`, `NotificationType`) got their
-columns from the project spec. If you add a field that is not in the table, or
-name an enum constant differently, update `schema.sql` and `sample_data.sql` in
-the same commit so the shared database stays in step.
+If you add a field that is not in the table, or name an enum constant
+differently, update `schema.sql` and `sample_data.sql` in the same commit so the
+shared database stays in step.
 
-Enum values currently in the schema:
+Columns that still need confirming against the real model classes:
 
-- `products.product_type` — `PLANT`, `PLANTER`, `GARDENING_KIT`
-- `products.eco_rating` — `LOW`, `MEDIUM`, `HIGH`, `EXCELLENT`
+- **clients** — `Client` keeps contact details in a `ContactDetails` object with
+  a single `address` string, while this table splits it into `address_line1`,
+  `address_line2`, `city` and `postal_code`. Either concatenate on read or
+  collapse the table to one `address` column; no `ClientDao` SQL exists yet, so
+  it is cheap to change now.
+- **delivery_agents** — `DeliveryAgent` has `nic` and an `AgentStatus` enum,
+  where this table has `licence_number` and a boolean `available`. The extra
+  `area_covered` and `joined_on` columns have no model field.
+- **vehicles** — `Vehicle` has `maxLoadKg` (int) against `capacity_kg`
+  (decimal), and no `make_model` field.
+
+Enum / check values currently in the schema:
+
+- `products.category` — `PLANT`, `PLANTER`, `GARDENING_KIT` (plain VARCHAR, so
+  nothing stops other values; keep to these three)
+- `products.eco_rating` — integer 1 (worst) to 5 (best), enforced by a CHECK
 - `products.care_level` — `EASY`, `MODERATE`, `DIFFICULT`
 - `products.skill_level` — `BEGINNER`, `INTERMEDIATE`, `ADVANCED`
 - `clients.client_type` — `HOUSEHOLD`, `OFFICE`
