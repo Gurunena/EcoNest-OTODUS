@@ -1,4 +1,4 @@
-package econest.model;
+package com.econest.product.model;
 
 public class Product {
 
