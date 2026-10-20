@@ -1,158 +1,124 @@
-package econest.dao;
+package com.econest.product.dao;
 
-import econest.db.DBConnection;
-import econest.model.Product;
+import com.econest.product.model.Product;
+import com.econest.util.DBConnection;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ProductDAO {
+/** Database access for the products table (Task 1: Manage Product Catalogue). */
+public class ProductDao {
 
-    // ADD PRODUCT
-    public boolean addProduct(Product product) {
+    private static final String COLUMNS =
+            "product_id, product_name, category, price, eco_rating, description, quantity";
 
-        String sql = "INSERT INTO products " +
-                "(product_id, product_name, category, price, eco_rating, description, quantity) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?)";
+    /** Inserts a product. The database assigns the id, which is copied back into the object. */
+    public void addProduct(Product product) throws SQLException {
+        String sql = "INSERT INTO products "
+                + "(product_name, category, price, eco_rating, description, quantity) "
+                + "VALUES (?, ?, ?, ?, ?, ?)";
 
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
-            statement.setInt(1, product.getProductId());
-            statement.setString(2, product.getProductName());
-            statement.setString(3, product.getCategory());
-            statement.setDouble(4, product.getPrice());
-            statement.setInt(5, product.getEcoRating());
-            statement.setString(6, product.getDescription());
-            statement.setInt(7, product.getQuantity());
+            ps.setString(1, product.getProductName());
+            ps.setString(2, product.getCategory());
+            ps.setDouble(3, product.getPrice());
+            ps.setInt(4, product.getEcoRating());
+            ps.setString(5, product.getDescription());
+            ps.setInt(6, product.getQuantity());
+            ps.executeUpdate();
 
-            return statement.executeUpdate() > 0;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (keys.next()) {
+                    product.setProductId(keys.getInt(1));
+                }
+            }
         }
     }
 
-    // GET ALL PRODUCTS
-    public List<Product> getAllProducts() {
+    public List<Product> getAllProducts() throws SQLException {
+        return query("SELECT " + COLUMNS + " FROM products ORDER BY product_id", null);
+    }
 
-        List<Product> products = new ArrayList<>();
+    /** Case-insensitive search on product name or category. */
+    public List<Product> searchProducts(String keyword) throws SQLException {
+        return query("SELECT " + COLUMNS + " FROM products "
+                        + "WHERE product_name LIKE ? OR category LIKE ? ORDER BY product_id",
+                "%" + keyword + "%");
+    }
 
-        String sql = "SELECT * FROM products";
-
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql);
-             ResultSet resultSet = statement.executeQuery()) {
-
-            while (resultSet.next()) {
-
-                Product product = new Product(
-                        resultSet.getInt("product_id"),
-                        resultSet.getString("product_name"),
-                        resultSet.getString("category"),
-                        resultSet.getDouble("price"),
-                        resultSet.getInt("eco_rating"),
-                        resultSet.getString("description"),
-                        resultSet.getInt("quantity")
-                );
-
-                products.add(product);
+    public Product getProductById(int productId) throws SQLException {
+        String sql = "SELECT " + COLUMNS + " FROM products WHERE product_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, productId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? map(rs) : null;
             }
-
-        } catch (Exception e) {
-            e.printStackTrace();
         }
+    }
 
+    /** @return true if a row was updated */
+    public boolean updateProduct(Product product) throws SQLException {
+        String sql = "UPDATE products SET product_name=?, category=?, price=?, "
+                + "eco_rating=?, description=?, quantity=? WHERE product_id=?";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, product.getProductName());
+            ps.setString(2, product.getCategory());
+            ps.setDouble(3, product.getPrice());
+            ps.setInt(4, product.getEcoRating());
+            ps.setString(5, product.getDescription());
+            ps.setInt(6, product.getQuantity());
+            ps.setInt(7, product.getProductId());
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    /**
+     * @return true if a row was deleted
+     * @throws SQLException e.g. when the product is already used by an order or stock-in record
+     */
+    public boolean deleteProduct(int productId) throws SQLException {
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement("DELETE FROM products WHERE product_id=?")) {
+            ps.setInt(1, productId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    private List<Product> query(String sql, String keyword) throws SQLException {
+        List<Product> products = new ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            if (keyword != null) {
+                ps.setString(1, keyword);
+                ps.setString(2, keyword);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    products.add(map(rs));
+                }
+            }
+        }
         return products;
     }
 
-    // GET PRODUCT BY ID
-    public Product getProductById(int productId) {
-
-        String sql =
-                "SELECT * FROM products WHERE product_id = ?";
-
-        try (Connection connection = DBConnection.getConnection();
-             PreparedStatement statement =
-                     connection.prepareStatement(sql)) {
-
-            statement.setInt(1, productId);
-
-            ResultSet resultSet =
-                    statement.executeQuery();
-
-            if (resultSet.next()) {
-
-                return new Product(
-                        resultSet.getInt("product_id"),
-                        resultSet.getString("product_name"),
-                        resultSet.getString("category"),
-                        resultSet.getDouble("price"),
-                        resultSet.getInt("eco_rating"),
-                        resultSet.getString("description"),
-                        resultSet.getInt("quantity")
-                );
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return null;
-    }
-
-    // UPDATE PRODUCT
-    public boolean updateProduct(Product product) {
-
-        String sql =
-                "UPDATE products SET " +
-                        "product_name=?, category=?, price=?, " +
-                        "eco_rating=?, description=?, quantity=? " +
-                        "WHERE product_id=?";
-
-        try (Connection connection =
-                     DBConnection.getConnection();
-             PreparedStatement statement =
-                     connection.prepareStatement(sql)) {
-
-            statement.setString(1, product.getProductName());
-            statement.setString(2, product.getCategory());
-            statement.setDouble(3, product.getPrice());
-            statement.setInt(4, product.getEcoRating());
-            statement.setString(5, product.getDescription());
-            statement.setInt(6, product.getQuantity());
-            statement.setInt(7, product.getProductId());
-
-            return statement.executeUpdate() > 0;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    // DELETE PRODUCT
-    public boolean deleteProduct(int productId) {
-
-        String sql =
-                "DELETE FROM products WHERE product_id=?";
-
-        try (Connection connection =
-                     DBConnection.getConnection();
-             PreparedStatement statement =
-                     connection.prepareStatement(sql)) {
-
-            statement.setInt(1, productId);
-
-            return statement.executeUpdate() > 0;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
+    private Product map(ResultSet rs) throws SQLException {
+        return new Product(
+                rs.getInt("product_id"),
+                rs.getString("product_name"),
+                rs.getString("category"),
+                rs.getDouble("price"),
+                rs.getInt("eco_rating"),
+                rs.getString("description"),
+                rs.getInt("quantity"));
     }
 }
