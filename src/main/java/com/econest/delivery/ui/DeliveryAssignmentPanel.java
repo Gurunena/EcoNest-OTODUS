@@ -99,6 +99,15 @@ public class DeliveryAssignmentPanel extends JPanel {
     private final List<PendingOrder> pendingOrders = new ArrayList<>();
     private final List<DeliveryAssignment> assignments = new ArrayList<>();
 
+    /**
+     * True until the first load finishes. Every page is constructed when the
+     * window opens, so a database that is down would otherwise stack modal
+     * error dialogs over the dashboard before the user has touched anything.
+     * The first failure goes to the status bar instead; anything the user
+     * actually asked for still gets a dialog.
+     */
+    private boolean initialLoad = true;
+
     public DeliveryAssignmentPanel() {
         this(new DeliveryAssignmentService());
     }
@@ -231,12 +240,18 @@ public class DeliveryAssignmentPanel extends JPanel {
             @Override
             protected void done() {
                 setBusy(false);
+                boolean quiet = initialLoad;
+                initialLoad = false;
                 try {
                     show(get());
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 } catch (ExecutionException ex) {
-                    fail("load the delivery lists", ex.getCause());
+                    if (quiet) {
+                        quietFail(ex.getCause());
+                    } else {
+                        fail("load the delivery lists", ex.getCause());
+                    }
                 }
             }
         }.execute();
@@ -446,6 +461,16 @@ public class DeliveryAssignmentPanel extends JPanel {
         }
         Dialogs.error(this, "Could not " + action + ".\n\n" + detail);
         setStatus("Delivery operation failed.");
+    }
+
+    /**
+     * Reports a failure the user did not ask for - the load that happens when
+     * the window first opens - in the status bar rather than a pop-up.
+     */
+    private void quietFail(Throwable cause) {
+        System.err.println("DeliveryAssignmentPanel: could not load the delivery lists - " + cause);
+        setStatus("Could not load the delivery lists. Check db.properties and the MySQL "
+                + "server, then press Refresh.");
     }
 
     private void setBusy(boolean busy) {

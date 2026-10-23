@@ -69,6 +69,15 @@ public class InventoryPanel extends BaseModulePanel {
     /** The rows currently on screen, so a selection can be mapped back. */
     private final List<StockItem> rows = new ArrayList<>();
 
+    /**
+     * True until the first load finishes. Every page is constructed when the
+     * window opens, so a database that is down would otherwise stack modal
+     * error dialogs over the dashboard before the user has touched anything.
+     * The first failure goes to the status bar instead; anything the user
+     * actually asked for still gets a dialog.
+     */
+    private boolean initialLoad = true;
+
     public InventoryPanel() {
         this(new InventoryService());
     }
@@ -170,12 +179,18 @@ public class InventoryPanel extends BaseModulePanel {
             @Override
             protected void done() {
                 setBusy(false);
+                boolean quiet = initialLoad;
+                initialLoad = false;
                 try {
                     showRows(get(), query);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 } catch (ExecutionException ex) {
-                    fail("load the stock list", ex.getCause());
+                    if (quiet) {
+                        quietFail("load the stock list", ex.getCause());
+                    } else {
+                        fail("load the stock list", ex.getCause());
+                    }
                 }
             }
         }.execute();
@@ -446,6 +461,16 @@ public class InventoryPanel extends BaseModulePanel {
         }
         Dialogs.error(this, "Could not " + action + ".\n\n" + detail);
         setStatus("Stock operation failed.");
+    }
+
+    /**
+     * Reports a failure the user did not ask for - the load that happens when
+     * the window first opens - in the status bar rather than a pop-up.
+     */
+    private void quietFail(String action, Throwable cause) {
+        System.err.println("InventoryPanel: could not " + action + " - " + cause);
+        setStatus("Could not " + action + ". Check db.properties and the MySQL server, "
+                + "then search or press Clear to retry.");
     }
 
     private void setBusy(boolean busy) {

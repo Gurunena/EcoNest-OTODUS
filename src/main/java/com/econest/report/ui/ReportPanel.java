@@ -117,6 +117,11 @@ public class ReportPanel extends JPanel {
         cmbYear = FormFields.comboBox(yearChoices(now.getYear()));
         cmbYear.setSelectedItem(now.getYear());
 
+        // The form default (200px) is far wider than these need, and the two
+        // of them together would crowd the title out of the header.
+        cmbMonth.setPreferredSize(new Dimension(130, Theme.FIELD_HEIGHT));
+        cmbYear.setPreferredSize(new Dimension(80, Theme.FIELD_HEIGHT));
+
         btnRun = Buttons.primary("Run report");
         btnExport = Buttons.secondary("Export to CSV");
         btnExport.setEnabled(false);          // nothing to export until a run succeeds
