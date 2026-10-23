@@ -1,64 +1,104 @@
 package com.econest.inventory.ui;
 
+import com.econest.inventory.model.StockItem;
+import com.econest.inventory.model.Supplier;
+import com.econest.inventory.service.InventoryService;
 import com.econest.ui.BaseModulePanel;
+import com.econest.ui.Theme;
+import com.econest.ui.components.Buttons;
 import com.econest.ui.components.Dialogs;
 import com.econest.ui.components.FormFields;
-import com.econest.ui.components.InputValidator;
 import com.econest.ui.components.TableStyler;
 
 import javax.swing.Box;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.SwingWorker;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
+import java.util.concurrent.ExecutionException;
 
 /**
- * Stock / Inventory screen - and the <b>reference example</b> for the whole
- * team. Every other module screen should look like this one: extend
- * {@link BaseModulePanel}, declare your fields, fill in the five hooks.
+ * Stock / Inventory screen.
  *
- * <p>The rows below are held in memory so the screen runs without a database.
- * Each place that will later talk to {@code InventoryService} is marked
- * {@code TODO (DAO)} - swapping those four spots over is the only change
- * needed to make the screen live.</p>
+ * <p>Shows the stock level of every product, highlights anything at or below
+ * its reorder level in red, and offers three write actions:</p>
+ * <ul>
+ *   <li><b>Restock</b> - stock received from a supplier (writes stock_in)</li>
+ *   <li><b>Adjust</b> - a signed correction with a reason (damage, recount)</li>
+ *   <li><b>Reorder level</b> - the threshold that drives the highlight</li>
+ * </ul>
  *
- * <p>Read {@code docs/UI_GUIDE.md} alongside this file.</p>
+ * <p>Built on {@link BaseModulePanel}: the title, search box, table and
+ * button row come from the template. Delete is removed because stock rows
+ * are never deleted - a product leaving the catalogue is the product
+ * module's job.</p>
+ *
+ * <p>Every database call runs on a {@link SwingWorker} so the window stays
+ * responsive, and no stack trace ever reaches the user.</p>
  */
 public class InventoryPanel extends BaseModulePanel {
 
-    // --- Table layout -----------------------------------------------------
     private static final String[] COLUMNS = {
-            "Code", "Product", "Quantity", "Reorder level", "Status"
+            "ID", "Product", "Category", "On hand", "Reorder level", "Status"
     };
 
-    /** Index of the column the status renderer colours. */
-    private static final int COL_STATUS = 4;
+    private static final int COL_ID = 0;
+    private static final int COL_STATUS = 5;
 
-    private static final String[] LOCATIONS = {"Main store", "Back room", "Nursery"};
-
-    // --- Form fields (txt / cmb prefixes, see the naming convention) -------
-    private JTextField txtCode;
-    private JTextField txtProduct;
-    private JTextField txtQuantity;
+    // --- Form fields (txt / cmb prefixes) ---------------------------------
+    private JLabel lblSelected;
+    private JTextField txtRestockQty;
+    private JComboBox<SupplierChoice> cmbSupplier;
+    private JTextField txtReceivedDate;
+    private JTextField txtAdjustQty;
+    private JTextField txtAdjustReason;
     private JTextField txtReorderLevel;
-    private JComboBox<String> cmbLocation;
 
-    /** Validation helper shared by the Add and Update handlers. */
-    private final InputValidator validator = new InputValidator();
+    /** Extra action beyond the template's four. */
+    private JButton btnReorder;
 
-    /** In-memory stand-in for the database. TODO (DAO): drop once wired up. */
-    private final List<Object[]> rows = new ArrayList<>();
+    private final InventoryService service;
+
+    /** The rows currently on screen, so a selection can be mapped back. */
+    private final List<StockItem> rows = new ArrayList<>();
 
     public InventoryPanel() {
-        super("Stock / Inventory", COLUMNS);
+        this(new InventoryService());
+    }
 
-        // Colour the Status column with the shared status colours.
+    /** Injectable constructor so a test can supply a fake service. */
+    public InventoryPanel(InventoryService service) {
+        super("Stock / Inventory", COLUMNS);
+        this.service = service;
+
+        // Low stock shows red through the shared status renderer.
         TableStyler.colourStatusColumn(tblData, COL_STATUS);
 
-        // Must be the last line: the base class builds the form and loads the
-        // table here, and both need the fields created above to exist.
+        // Retune the template's buttons for a stock screen.
+        btnAdd.setText("Restock");
+        btnAdd.setToolTipText("Record stock received from a supplier");
+        btnUpdate.setText("Adjust");
+        btnUpdate.setToolTipText("Correct the stock count and say why");
+        pnlActions.remove(btnDelete);        // stock rows are never deleted
+
+        btnReorder = Buttons.secondary("Reorder level");
+        btnReorder.setToolTipText("Set the threshold that marks this product low");
+        btnReorder.addActionListener(e -> setReorderLevel());
+        pnlActions.add(btnReorder, 2);
+
+        tblData.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                showSelection();
+            }
+        });
+
         initPanel();
     }
 
@@ -68,19 +108,44 @@ public class InventoryPanel extends BaseModulePanel {
 
     @Override
     protected void buildForm(JPanel form) {
-        txtCode = FormFields.textField();
-        txtProduct = FormFields.textField();
-        txtQuantity = FormFields.textField();
-        txtReorderLevel = FormFields.textField();
-        cmbLocation = FormFields.comboBox(LOCATIONS);
+        lblSelected = new JLabel("No product selected");
+        lblSelected.setFont(Theme.FONT_BODY_BOLD);
+        lblSelected.setForeground(Theme.TEXT_MUTED);
+        lblSelected.setAlignmentX(JPanel.LEFT_ALIGNMENT);
 
-        form.add(FormFields.heading("Stock item"));
-        form.add(Box.createVerticalStrut(12));
-        form.add(FormFields.row("Code", txtCode));
-        form.add(FormFields.row("Product", txtProduct));
-        form.add(FormFields.row("Quantity on hand", txtQuantity));
-        form.add(FormFields.row("Reorder level", txtReorderLevel));
-        form.add(FormFields.row("Location", cmbLocation));
+        txtRestockQty = FormFields.textField();
+        cmbSupplier = FormFields.comboBox(new SupplierChoice[0]);
+        txtReceivedDate = FormFields.textField();
+        txtReceivedDate.setText(LocalDate.now().toString());
+        txtReceivedDate.setToolTipText("yyyy-mm-dd");
+
+        txtAdjustQty = FormFields.textField();
+        txtAdjustQty.setToolTipText("Use a minus sign to remove stock, e.g. -3");
+        txtAdjustReason = FormFields.textField();
+
+        txtReorderLevel = FormFields.textField();
+
+        form.add(FormFields.heading("Selected product"));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+        form.add(lblSelected);
+        form.add(Box.createVerticalStrut(Theme.GAP_LARGE));
+
+        form.add(FormFields.heading("Restock"));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+        form.add(FormFields.row("Quantity received", txtRestockQty));
+        form.add(FormFields.row("Supplier", cmbSupplier));
+        form.add(FormFields.row("Received date (yyyy-mm-dd)", txtReceivedDate));
+        form.add(Box.createVerticalStrut(Theme.GAP_LARGE));
+
+        form.add(FormFields.heading("Adjust"));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+        form.add(FormFields.row("Change (+ / -)", txtAdjustQty));
+        form.add(FormFields.row("Reason", txtAdjustReason));
+        form.add(Box.createVerticalStrut(Theme.GAP_LARGE));
+
+        form.add(FormFields.heading("Reorder level"));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+        form.add(FormFields.row("Threshold", txtReorderLevel));
     }
 
     // ---------------------------------------------------------------------
@@ -89,81 +154,192 @@ public class InventoryPanel extends BaseModulePanel {
 
     @Override
     protected void loadTableData() {
-        if (rows.isEmpty()) {
-            seedSampleRows();
+        loadStock(txtSearch == null ? "" : txtSearch.getText().trim());
+        loadSuppliers();
+    }
+
+    /** Reads stock off the UI thread and repaints the table when it lands. */
+    private void loadStock(String query) {
+        setBusy(true);
+        new SwingWorker<List<StockItem>, Void>() {
+            @Override
+            protected List<StockItem> doInBackground() throws Exception {
+                return service.search(query);
+            }
+
+            @Override
+            protected void done() {
+                setBusy(false);
+                try {
+                    showRows(get(), query);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    fail("load the stock list", ex.getCause());
+                }
+            }
+        }.execute();
+    }
+
+    /** Fills the supplier combo; a failure here only disables restocking. */
+    private void loadSuppliers() {
+        new SwingWorker<List<Supplier>, Void>() {
+            @Override
+            protected List<Supplier> doInBackground() throws Exception {
+                return service.findAllSuppliers();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    cmbSupplier.removeAllItems();
+                    for (Supplier supplier : get()) {
+                        cmbSupplier.addItem(new SupplierChoice(supplier));
+                    }
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    // Not fatal: the stock table is still usable.
+                    System.err.println("InventoryPanel: could not load suppliers - "
+                            + ex.getCause());
+                }
+            }
+        }.execute();
+    }
+
+    private void showRows(List<StockItem> items, String query) {
+        rows.clear();
+        rows.addAll(items);
+
+        Object[][] data = new Object[items.size()][COLUMNS.length];
+        for (int i = 0; i < items.size(); i++) {
+            StockItem item = items.get(i);
+            data[i] = new Object[]{
+                    item.getProduct().getProductId(),
+                    item.getProduct().getProductName(),
+                    item.getProduct().getCategory(),
+                    item.getQuantityOnHand(),
+                    item.getReorderLevel(),
+                    InventoryService.statusOf(item)};
         }
-        // TODO (DAO): replace the two lines above with
-        //   rows = inventoryService.findAllStockItems() mapped to Object[]
-        setRows(rows.toArray(new Object[0][]));
-        setStatus(rows.size() + " stock items loaded.");
+        setRows(data);
+
+        long low = items.stream().filter(InventoryService::isLowStock).count();
+        String scope = query.isEmpty() ? "" : " matching \"" + query + "\"";
+        setStatus(items.size() + " product(s)" + scope
+                + (low == 0 ? "." : ", " + low + " at or below reorder level."));
     }
 
     // ---------------------------------------------------------------------
-    // Hook 3: add
+    // Hook 3: Restock (the template's Add button)
     // ---------------------------------------------------------------------
 
     @Override
     protected void onAdd() {
-        Object[] row = readForm();
-        if (row == null) {
-            setStatus("Please fix the highlighted fields.");
-            return;
-        }
-        if (findRowByCode((String) row[0]) >= 0) {
-            validator.fail(txtCode, "That code is already in use");
-            setStatus("Duplicate stock code.");
+        StockItem selected = selectedStockItem();
+        if (selected == null) {
+            Dialogs.error(this, "Select the product you are restocking.");
             return;
         }
 
-        rows.add(row);          // TODO (DAO): inventoryService.save(stockItem)
-        loadTableData();
-        onClear();
-        setStatus("Added stock item " + row[0] + ".");
+        final int quantity;
+        final LocalDate received;
+        try {
+            quantity = parseInt(txtRestockQty.getText(), "Quantity received");
+            received = parseDate(txtReceivedDate.getText());
+        } catch (IllegalArgumentException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
+        SupplierChoice supplier = (SupplierChoice) cmbSupplier.getSelectedItem();
+        if (supplier == null) {
+            Dialogs.error(this, "Select the supplier the stock came from. "
+                    + "If the list is empty, add a supplier to the database first.");
+            return;
+        }
+
+        final int productId = selected.getProduct().getProductId();
+        final String productName = selected.getProduct().getProductName();
+
+        runWrite("restock " + productName,
+                () -> service.restock(productId, supplier.id(), quantity, received),
+                () -> {
+                    txtRestockQty.setText("");
+                    setStatus("Added " + quantity + " to " + productName + ".");
+                });
     }
 
     // ---------------------------------------------------------------------
-    // Hook 4: update
+    // Hook 4: Adjust (the template's Update button)
     // ---------------------------------------------------------------------
 
     @Override
     protected void onUpdate() {
-        // Resolve through the code rather than the row index: while a search
-        // filter is active, the table shows a subset and the indexes differ.
-        int selected = selectedSourceRow();
-        if (selected < 0) {
-            setStatus("Select the row you want to update.");
-            return;
-        }
-        Object[] row = readForm();
-        if (row == null) {
-            setStatus("Please fix the highlighted fields.");
+        StockItem selected = selectedStockItem();
+        if (selected == null) {
+            Dialogs.error(this, "Select the product you are adjusting.");
             return;
         }
 
-        rows.set(selected, row); // TODO (DAO): inventoryService.save(stockItem)
-        loadTableData();
-        setStatus("Updated stock item " + row[0] + ".");
+        final int delta;
+        try {
+            delta = parseSignedInt(txtAdjustQty.getText(), "Change");
+        } catch (IllegalArgumentException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
+        final String reason = txtAdjustReason.getText().trim();
+        if (reason.isEmpty()) {
+            Dialogs.error(this, "Enter a reason for the adjustment.");
+            txtAdjustReason.requestFocusInWindow();
+            return;
+        }
+
+        final int productId = selected.getProduct().getProductId();
+        final String productName = selected.getProduct().getProductName();
+
+        // Removing stock is destructive enough to confirm.
+        if (delta < 0 && !Dialogs.confirm(this,
+                "Remove " + Math.abs(delta) + " unit(s) from " + productName + "?\nReason: " + reason)) {
+            return;
+        }
+
+        runWrite("adjust " + productName,
+                () -> service.adjustStock(productId, delta, reason),
+                () -> {
+                    txtAdjustQty.setText("");
+                    txtAdjustReason.setText("");
+                    setStatus("Adjusted " + productName + " by " + delta + ".");
+                });
     }
 
     // ---------------------------------------------------------------------
-    // Hook 5: delete
-    //
-    // The base class has already shown the confirm dialog by the time this
-    // runs, so there is nothing to ask here.
+    // Extra action: reorder level
     // ---------------------------------------------------------------------
 
-    @Override
-    protected void onDelete() {
-        int selected = selectedSourceRow();
-        if (selected < 0) {
-            setStatus("Select the row you want to delete.");
+    private void setReorderLevel() {
+        StockItem selected = selectedStockItem();
+        if (selected == null) {
+            Dialogs.error(this, "Select a product first.");
             return;
         }
 
-        Object[] removed = rows.remove(selected); // TODO (DAO): service.delete(id)
-        loadTableData();
-        onClear();
-        setStatus("Deleted stock item " + removed[0] + ".");
+        final int level;
+        try {
+            level = parseInt(txtReorderLevel.getText(), "Reorder level");
+        } catch (IllegalArgumentException ex) {
+            Dialogs.error(this, ex.getMessage());
+            return;
+        }
+
+        final int productId = selected.getProduct().getProductId();
+        final String productName = selected.getProduct().getProductName();
+
+        runWrite("set the reorder level for " + productName,
+                () -> service.setReorderLevel(productId, level),
+                () -> setStatus("Reorder level for " + productName + " is now " + level + "."));
     }
 
     // ---------------------------------------------------------------------
@@ -172,105 +348,158 @@ public class InventoryPanel extends BaseModulePanel {
 
     @Override
     protected void onClear() {
-        txtCode.setText("");
-        txtProduct.setText("");
-        txtQuantity.setText("");
+        txtRestockQty.setText("");
+        txtReceivedDate.setText(LocalDate.now().toString());
+        txtAdjustQty.setText("");
+        txtAdjustReason.setText("");
         txtReorderLevel.setText("");
-        cmbLocation.setSelectedIndex(0);
-        validator.clearAll(txtCode, txtProduct, txtQuantity, txtReorderLevel, cmbLocation);
-        super.onClear();        // drops the table selection and the search box
+        lblSelected.setText("No product selected");
+        super.onClear();
     }
 
     @Override
     protected void onSearch(String query) {
-        if (query.isEmpty()) {
-            setRows(rows.toArray(new Object[0][]));
-            setStatus(rows.size() + " stock items.");
-            return;
-        }
-        String needle = query.toLowerCase(Locale.ROOT);
-
-        // TODO (DAO): for a large table, search in SQL instead of in memory.
-        List<Object[]> matches = new ArrayList<>();
-        for (Object[] row : rows) {
-            String code = String.valueOf(row[0]).toLowerCase(Locale.ROOT);
-            String product = String.valueOf(row[1]).toLowerCase(Locale.ROOT);
-            if (code.contains(needle) || product.contains(needle)) {
-                matches.add(row);
-            }
-        }
-        setRows(matches.toArray(new Object[0][]));
-        setStatus(matches.size() + " of " + rows.size() + " stock items match \"" + query + "\".");
+        loadStock(query);
     }
 
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
 
-    /**
-     * Validates the form and turns it into a table row.
-     *
-     * @return the row, or null when a field failed validation (the field
-     *         itself already shows the reason)
-     */
-    private Object[] readForm() {
-        validator.reset();
-        String code = validator.required(txtCode, "Code");
-        String product = validator.required(txtProduct, "Product");
-        Integer quantity = validator.integer(txtQuantity, "Quantity");
-        Integer reorderLevel = validator.integer(txtReorderLevel, "Reorder level");
-        validator.requiredSelection(cmbLocation, "Location");
+    /** Mirrors the selected row into the form. */
+    private void showSelection() {
+        StockItem selected = selectedStockItem();
+        if (selected == null) {
+            lblSelected.setText("No product selected");
+            lblSelected.setForeground(Theme.TEXT_MUTED);
+            return;
+        }
+        lblSelected.setText("<html>" + selected.getProduct().getProductName()
+                + "<br>" + selected.getQuantityOnHand() + " on hand</html>");
+        lblSelected.setForeground(InventoryService.isLowStock(selected)
+                ? Theme.STATUS_DANGER : Theme.TEXT_PRIMARY);
+        txtReorderLevel.setText(String.valueOf(selected.getReorderLevel()));
+    }
 
-        if (!validator.isValid()) {
+    /** The StockItem behind the selected table row, or null. */
+    private StockItem selectedStockItem() {
+        Object id = selectedValue(COL_ID);
+        if (id == null) {
             return null;
         }
-        return new Object[]{
-                code, product, quantity, reorderLevel, stockStatus(quantity, reorderLevel)
-        };
+        int productId = ((Number) id).intValue();
+        return rows.stream()
+                .filter(item -> item.getProduct().getProductId() == productId)
+                .findFirst()
+                .orElse(null);
     }
 
-    /** The word the Status column shows; TableStyler turns it into a colour. */
-    private static String stockStatus(int quantity, int reorderLevel) {
-        if (quantity <= 0) {
-            return "Out of stock";
-        }
-        return quantity <= reorderLevel ? "Low stock" : "In stock";
+    /** A database write that runs off the UI thread; reloads on success. */
+    private void runWrite(String action, DbCall call, Runnable onSuccess) {
+        setBusy(true);
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                call.run();
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                setBusy(false);
+                try {
+                    get();
+                    onSuccess.run();
+                    loadStock(txtSearch.getText().trim());
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    fail(action, ex.getCause());
+                }
+            }
+        }.execute();
+    }
+
+    /** Something a DAO call can throw. */
+    @FunctionalInterface
+    private interface DbCall {
+        void run() throws SQLException;
     }
 
     /**
-     * Index into {@link #rows} of the record the user selected in the table.
-     * Goes through the Code column so it stays correct even when a search
-     * filter means the table is showing only some of the rows.
-     *
-     * @return the index, or -1 when nothing is selected
+     * Turns any failure into one clear sentence. A validation message from
+     * the service is already user-ready; anything else gets a generic lead-in
+     * and the detail. The stack trace goes to the console only.
      */
-    private int selectedSourceRow() {
-        Object code = selectedValue(0);
-        return code == null ? -1 : findRowByCode(code.toString());
-    }
-
-    /** Index of the row with this code, or -1 when there is none. */
-    private int findRowByCode(String code) {
-        for (int i = 0; i < rows.size(); i++) {
-            if (String.valueOf(rows.get(i)[0]).equalsIgnoreCase(code)) {
-                return i;
-            }
+    private void fail(String action, Throwable cause) {
+        if (cause instanceof IllegalArgumentException) {
+            Dialogs.error(this, cause.getMessage());
+            setStatus("Nothing changed.");
+            return;
         }
-        return -1;
-    }
-
-    /** A few rows so the screen is not empty before the DAO is connected. */
-    private void seedSampleRows() {
-        rows.add(new Object[]{"SKU-1001", "Areca Palm (medium)", 42, 10, stockStatus(42, 10)});
-        rows.add(new Object[]{"SKU-1002", "Terracotta planter 10in", 8, 12, stockStatus(8, 12)});
-        rows.add(new Object[]{"SKU-1003", "Herb gardening kit", 0, 5, stockStatus(0, 5)});
-        rows.add(new Object[]{"SKU-1004", "Coco peat block 5kg", 120, 25, stockStatus(120, 25)});
-    }
-
-    /** Kept so a teammate can see how to raise an error from a panel. */
-    @SuppressWarnings("unused")
-    private void reportFailure(Exception ex) {
-        Dialogs.error(this, "Could not reach the stock database:\n" + ex.getMessage());
+        String detail = cause == null || cause.getMessage() == null
+                ? "Unknown error."
+                : cause.getMessage();
+        System.err.println("InventoryPanel: could not " + action);
+        if (cause != null) {
+            cause.printStackTrace();
+        }
+        Dialogs.error(this, "Could not " + action + ".\n\n" + detail);
         setStatus("Stock operation failed.");
+    }
+
+    private void setBusy(boolean busy) {
+        btnAdd.setEnabled(!busy);
+        btnUpdate.setEnabled(!busy);
+        if (btnReorder != null) {
+            btnReorder.setEnabled(!busy);
+        }
+    }
+
+    private static int parseInt(String text, String fieldName) {
+        int value = parseSignedInt(text, fieldName);
+        if (value < 0) {
+            throw new IllegalArgumentException(fieldName + " cannot be negative.");
+        }
+        return value;
+    }
+
+    private static int parseSignedInt(String text, String fieldName) {
+        String trimmed = text == null ? "" : text.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " is required.");
+        }
+        try {
+            return Integer.parseInt(trimmed);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(fieldName + " must be a whole number.");
+        }
+    }
+
+    private static LocalDate parseDate(String text) {
+        String trimmed = text == null ? "" : text.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("Enter the date the stock was received.");
+        }
+        try {
+            return LocalDate.parse(trimmed);
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException(
+                    "Enter the received date as yyyy-mm-dd, for example "
+                            + LocalDate.now() + ".");
+        }
+    }
+
+    /** Supplier wrapper whose toString drives the combo box display. */
+    private record SupplierChoice(int id, String name) {
+
+        SupplierChoice(Supplier supplier) {
+            this(supplier.getId(), supplier.getName());
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
     }
 }
