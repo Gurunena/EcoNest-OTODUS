@@ -140,8 +140,22 @@ panel.setBorder(BorderFactory.createEmptyBorder(
 
 ## The helpers at a glance
 
-**`Buttons`** — `Buttons.primary("Save")`, `Buttons.secondary("Refresh")`,
-`Buttons.danger("Remove")`. Add extras to `pnlActions`.
+**`Buttons`** — `Buttons.primary("Save")` (filled green),
+`Buttons.secondary("Refresh")` (outlined), `Buttons.danger("Remove")`
+(outlined red), `Buttons.text("Clear")` (no chrome), plus
+`Buttons.link("View all")` and `Buttons.icon(icon, "tooltip")`. Add extras to
+`pnlActions`, which is a 2-column grid so they wrap inside the form card.
+Always give an icon-only button a tooltip — it has no label to explain it.
+
+**`Card`** — the white rounded surface everything sits on:
+`new Card(new BorderLayout()).withPadding()`, or
+`Card.titled("Low stock", content, optionalHeaderAction)`. It paints its own
+border and soft shadow, so don't add one.
+
+**`EmptyState`** — `EmptyState.wrap(scrollPane, tbl, "No items found", "hint")`
+returns a container that shows your table while it has rows and a friendly
+empty panel when it doesn't. `BaseModulePanel` already does this for
+`tblData`; change the wording with `setEmptyState(message, hint)`.
 
 **`TableStyler`** — `style(tbl)` is already applied to `tblData`. Add
 `TableStyler.colourStatusColumn(tblData, index)` to colour a status column:
@@ -149,11 +163,22 @@ green for *delivered / completed / in stock / active*, amber for *pending /
 processing / in transit / assigned*, red for *failed / cancelled / low stock /
 out of stock*, blue for *new / draft / scheduled*. Anything else stays the
 normal text colour, so a new status word never breaks the table.
-`fitColumns(tbl)` sizes columns to their content — `setRows(...)` already
-calls it, so you only need it if you fill the model some other way.
+`colourStatusColumn` renders the column as a rounded pill badge, not plain
+text. `rightAlign(tbl, 2, 3)` right-aligns numeric columns, which is how
+numbers should read. `fitColumns(tbl)` sizes columns to their content —
+`setRows(...)` already calls it, so you only need it if you fill the model
+some other way. Columns squeeze to fit and only scroll sideways on a large
+overflow, so the status pill stays visible.
 
 **`FormFields`** — `textField()`, `comboBox(items)`, `label(text)`,
 `heading(text)`, `row(caption, input)`.
+
+**`Icons`** — `Icons.icon("inventory", 18, Theme.TEXT_ON_DARK)` for an SVG
+from `resources/images/icons` (the colour argument re-tints it), and
+`Icons.image("logo.png", 150, 52)` for a scaled bitmap from
+`resources/images`. Both return `null` when the file isn't there, so always
+null-check and skip the image rather than assuming it loaded. File names and
+sizes are listed in `src/main/resources/images/README.txt`.
 
 **`Dialogs`** — `info`, `error`, `warn`, `confirm`, `confirmDelete`,
 `errorAt(parent, message, field)`. The base class already calls

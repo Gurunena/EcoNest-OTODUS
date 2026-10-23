@@ -2,7 +2,6 @@ package com.econest.ui.components;
 
 import com.econest.ui.Theme;
 
-import javax.swing.BorderFactory;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -30,6 +29,12 @@ import java.util.regex.Pattern;
  * records the failure so {@link #isValid()} tells you whether to carry on.
  */
 public final class InputValidator {
+
+    /**
+     * Client property marking a field as currently invalid, so the focus ring
+     * in {@link FormFields} does not paint over a red error border.
+     */
+    static final String INVALID_KEY = "econest.invalid";
 
     /** Deliberately simple: one @, a dot in the domain, no spaces. */
     private static final Pattern EMAIL =
@@ -145,17 +150,29 @@ public final class InputValidator {
     // Showing and hiding the inline message
     // ---------------------------------------------------------------------
 
-    /** Marks a field as bad: red border plus a message under it. */
+    /** Marks a field as bad: red ring plus a message under it. */
     public void fail(JComponent field, String message) {
         valid = false;
-        field.setBorder(BorderFactory.createLineBorder(Theme.STATUS_DANGER));
+        field.putClientProperty(INVALID_KEY, Boolean.TRUE);
+        field.setBorder(FormFields.errorBorder());
         errorLabelOf(field).setText(message);
+        captionOf(field).ifPresent(lbl -> lbl.setForeground(Theme.STATUS_DANGER));
     }
 
     /** Clears any error shown on a field. */
     public void clear(JComponent field) {
-        field.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
+        field.putClientProperty(INVALID_KEY, Boolean.FALSE);
+        field.setBorder(FormFields.restingBorder());
         errorLabelOf(field).setText(" ");
+        captionOf(field).ifPresent(lbl -> lbl.setForeground(Theme.TEXT_MUTED));
+    }
+
+    /** The row caption belonging to a field, when FormFields built the row. */
+    private static java.util.Optional<JLabel> captionOf(JComponent field) {
+        Object stored = field.getClientProperty(FormFields.CAPTION_LABEL_KEY);
+        return stored instanceof JLabel label
+                ? java.util.Optional.of(label)
+                : java.util.Optional.empty();
     }
 
     /** Clears the errors on a whole group of fields - handy in {@code onClear()}. */

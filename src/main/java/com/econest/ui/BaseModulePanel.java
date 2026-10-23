@@ -1,7 +1,10 @@
 package com.econest.ui;
 
 import com.econest.ui.components.Buttons;
+import com.econest.ui.components.Card;
 import com.econest.ui.components.Dialogs;
+import com.econest.ui.components.EmptyState;
+import com.econest.ui.components.FormFields;
 import com.econest.ui.components.TableStyler;
 
 import javax.swing.BorderFactory;
@@ -22,22 +25,21 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.GridLayout;
 
 /**
- * The shared template every EcoNest module screen is built from. It lays out
- * the approved mockup for you:
+ * The shared template every EcoNest module screen is built from.
  *
  * <pre>
  *  +--------------------------------------------------------------+
- *  |  Screen title                       [ Search ............. ]  |
+ *  |  Screen title                      [ (Q) Search ......  (x) ] |
  *  +-----------------------------------------+--------------------+
- *  |                                         |  Form area         |
- *  |   JTable (tblData)                      |  (your fields,     |
- *  |                                         |   built by you)    |
- *  |                                         |                    |
+ *  |  +-----------------------------------+  |  +--------------+  |
+ *  |  |  table, in a white rounded card   |  |  | form card    |  |
+ *  |  |                                   |  |  |  fields...   |  |
+ *  |  |                                   |  |  |  [Add][Upd]  |  |
+ *  |  +-----------------------------------+  |  +--------------+  |
  *  +-----------------------------------------+--------------------+
- *  |            [ Add ] [ Update ] [ Delete ] [ Clear ]            |
- *  +--------------------------------------------------------------+
  * </pre>
  *
  * <h2>What a subclass has to do</h2>
@@ -47,20 +49,18 @@ import java.awt.FlowLayout;
  *   <li>Implement {@link #loadTableData()} - fill the table from your DAO
  *       or service.</li>
  *   <li>Override {@link #onAdd()}, {@link #onUpdate()}, {@link #onDelete()},
- *       {@link #onClear()} and {@link #onSearch(String)} as needed. Each one
- *       has a harmless default, so you can implement them one at a time.</li>
- *   <li>Call {@link #initPanel()} at the end of your constructor, once your
- *       own fields are created. (The template cannot do this for you: your
- *       fields do not exist yet while {@code super(...)} is still running.)</li>
+ *       {@link #onClear()} and {@link #onSearch(String)} as needed.</li>
+ *   <li>Call {@link #initPanel()} at the end of your constructor.</li>
  * </ol>
  *
  * <h2>What you get for free</h2>
  * <ul>
- *   <li>A styled, striped {@link JTable} in {@link #tblData} with the model
- *       {@link #tableModel} - use {@link #setRows(Object[][])} to refill it.</li>
- *   <li>Add / Update / Delete / Clear buttons already wired to the hooks,
- *       with a confirm dialog in front of Delete.</li>
- *   <li>A search box that calls {@link #onSearch(String)} as the user types.</li>
+ *   <li>A styled table in {@link #tblData}, inside a rounded card, with an
+ *       empty state when it has no rows.</li>
+ *   <li>Add / Update / Delete / Clear directly under the form fields, with a
+ *       confirm dialog in front of Delete.</li>
+ *   <li>A search box with a magnifier and a clear button, calling
+ *       {@link #onSearch(String)} as the user types.</li>
  *   <li>{@link #setStatus(String)}, which writes to the window's status bar.</li>
  * </ul>
  *
@@ -93,10 +93,11 @@ public abstract class BaseModulePanel extends JPanel {
     protected final JButton btnDelete;
     protected final JButton btnClear;
 
-    /** Row holding the action buttons; add extra buttons to it if you need more. */
+    /** Row holding the action buttons, inside the form card. */
     protected final JPanel pnlActions;
 
     private final String moduleTitle;
+    private final EmptyState.Host tableHost;
 
     // ---------------------------------------------------------------------
     // Construction
@@ -110,38 +111,30 @@ public abstract class BaseModulePanel extends JPanel {
         super(new BorderLayout(Theme.GAP, Theme.GAP));
         this.moduleTitle = title;
 
-        setBackground(Theme.CONTENT_BG);
+        setBackground(Theme.PAGE_BG);
         setBorder(BorderFactory.createEmptyBorder(
                 Theme.PADDING, Theme.PADDING, Theme.PADDING, Theme.PADDING));
 
         // --- Top: title + search -----------------------------------------
         lblTitle = new JLabel(title);
         lblTitle.setFont(Theme.FONT_TITLE);
-        lblTitle.setForeground(Theme.SIDEBAR_BG);
+        lblTitle.setForeground(Theme.TEXT_PRIMARY);
 
         txtSearch = new JTextField();
-        txtSearch.setFont(Theme.FONT_BODY);
-        txtSearch.setPreferredSize(new Dimension(240, Theme.FIELD_HEIGHT));
-        txtSearch.putClientProperty("JTextField.placeholderText", "Search...");
         txtSearch.setToolTipText("Search this screen");
+        JPanel pnlSearch = FormFields.searchBox(txtSearch);
 
-        JLabel lblSearch = new JLabel("Search");
-        lblSearch.setFont(Theme.FONT_BODY);
-        lblSearch.setForeground(Theme.TEXT_MUTED);
-
-        JPanel pnlSearch = new JPanel(new FlowLayout(FlowLayout.RIGHT, Theme.GAP_SMALL, 0));
-        pnlSearch.setOpaque(false);
-        pnlSearch.add(lblSearch);
-        pnlSearch.add(txtSearch);
+        JPanel pnlSearchWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        pnlSearchWrap.setOpaque(false);
+        pnlSearchWrap.add(pnlSearch);
 
         JPanel pnlHeader = new JPanel(new BorderLayout());
         pnlHeader.setOpaque(false);
-        pnlHeader.setBorder(BorderFactory.createEmptyBorder(0, 0, Theme.GAP, 0));
+        pnlHeader.setBorder(BorderFactory.createEmptyBorder(0, 0, Theme.GAP_SMALL, 0));
         pnlHeader.add(lblTitle, BorderLayout.WEST);
-        pnlHeader.add(pnlSearch, BorderLayout.EAST);
+        pnlHeader.add(pnlSearchWrap, BorderLayout.EAST);
 
-        // --- Centre: the table -------------------------------------------
-        // Cells are not editable in place: edits go through the form.
+        // --- Centre: the table, in a card --------------------------------
         tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -153,47 +146,75 @@ public abstract class BaseModulePanel extends JPanel {
         TableStyler.style(tblData);
 
         JScrollPane scrTable = new JScrollPane(tblData);
-        scrTable.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
-        scrTable.getViewport().setBackground(Theme.CONTENT_BG);
+        scrTable.setBorder(BorderFactory.createEmptyBorder());
+        scrTable.setOpaque(false);
+        scrTable.getViewport().setBackground(Theme.CARD_BG);
         scrTable.setHorizontalScrollBarPolicy(
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        tableHost = EmptyState.wrap(scrTable, tblData, "No items found",
+                "Nothing matches the current search.");
 
-        // --- Right: the form area ----------------------------------------
+        Card cardTable = new Card(new BorderLayout());
+        cardTable.add(tableHost, BorderLayout.CENTER);
+
+        // --- Right: the form card ----------------------------------------
         pnlForm = new JPanel();
         pnlForm.setLayout(new BoxLayout(pnlForm, BoxLayout.Y_AXIS));
-        pnlForm.setBackground(Theme.PANEL_BG);
-        pnlForm.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Theme.BORDER),
-                BorderFactory.createEmptyBorder(
-                        Theme.GAP, Theme.GAP, Theme.GAP, Theme.GAP)));
+        pnlForm.setOpaque(false);
+        pnlForm.setAlignmentX(LEFT_ALIGNMENT);
 
-        JScrollPane scrForm = new JScrollPane(pnlForm);
-        scrForm.setBorder(BorderFactory.createEmptyBorder());
-        scrForm.getVerticalScrollBar().setUnitIncrement(16);
-        scrForm.setPreferredSize(new Dimension(320, 0));
-
-        JPanel pnlBody = new JPanel(new BorderLayout(Theme.GAP, 0));
-        pnlBody.setOpaque(false);
-        pnlBody.add(scrTable, BorderLayout.CENTER);
-        pnlBody.add(scrForm, BorderLayout.EAST);
-
-        // --- Bottom: the action buttons ------------------------------------
         btnAdd = Buttons.primary("Add");
         btnUpdate = Buttons.secondary("Update");
         btnDelete = Buttons.danger("Delete");
-        btnClear = Buttons.secondary("Clear");
+        btnClear = Buttons.text("Clear");
 
-        pnlActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, Theme.GAP_SMALL, 0));
+        // The actions live inside the form card, directly under the fields,
+        // because that is what they act on.
+        // A grid, not a row: the form card is narrow, and four buttons laid
+        // out in a single FlowLayout line simply fall off the right edge.
+        // Two per row wraps cleanly however many a screen adds.
+        pnlActions = new JPanel(new GridLayout(0, 2, Theme.GAP_SMALL, Theme.GAP_SMALL));
         pnlActions.setOpaque(false);
+        pnlActions.setAlignmentX(LEFT_ALIGNMENT);
         pnlActions.setBorder(BorderFactory.createEmptyBorder(Theme.GAP, 0, 0, 0));
         pnlActions.add(btnAdd);
         pnlActions.add(btnUpdate);
         pnlActions.add(btnDelete);
         pnlActions.add(btnClear);
 
+        JPanel pnlFormBody = new JPanel();
+        pnlFormBody.setLayout(new BoxLayout(pnlFormBody, BoxLayout.Y_AXIS));
+        pnlFormBody.setOpaque(false);
+        pnlFormBody.add(pnlForm);
+
+        JScrollPane scrForm = new JScrollPane(pnlFormBody);
+        scrForm.setBorder(BorderFactory.createEmptyBorder());
+        scrForm.setOpaque(false);
+        scrForm.getViewport().setOpaque(false);
+        scrForm.getVerticalScrollBar().setUnitIncrement(16);
+        scrForm.setHorizontalScrollBarPolicy(
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+
+        // The actions sit at the foot of the card rather than in the scrolling
+        // area, so a long form can never push Add out of sight.
+        JPanel pnlFooter = new JPanel(new BorderLayout());
+        pnlFooter.setOpaque(false);
+        pnlFooter.add(Card.separator(), BorderLayout.NORTH);
+        pnlFooter.add(pnlActions, BorderLayout.CENTER);
+
+        Card cardForm = new Card(new BorderLayout()).withPadding();
+        cardForm.add(scrForm, BorderLayout.CENTER);
+        cardForm.add(pnlFooter, BorderLayout.SOUTH);
+        cardForm.setPreferredSize(new Dimension(340, 0));
+        cardForm.setMinimumSize(new Dimension(300, 0));
+
+        JPanel pnlBody = new JPanel(new BorderLayout(Theme.GAP_SMALL, 0));
+        pnlBody.setOpaque(false);
+        pnlBody.add(cardTable, BorderLayout.CENTER);
+        pnlBody.add(cardForm, BorderLayout.EAST);
+
         add(pnlHeader, BorderLayout.NORTH);
         add(pnlBody, BorderLayout.CENTER);
-        add(pnlActions, BorderLayout.SOUTH);
 
         wireActions();
     }
@@ -216,7 +237,6 @@ public abstract class BaseModulePanel extends JPanel {
             }
         });
 
-        // Live search: fires on every keystroke in the search box.
         txtSearch.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
@@ -260,10 +280,7 @@ public abstract class BaseModulePanel extends JPanel {
      */
     protected abstract void buildForm(JPanel form);
 
-    /**
-     * Fill the table from your DAO or service. Clear it first with
-     * {@link #setRows(Object[][])} or {@code tableModel.setRowCount(0)}.
-     */
+    /** Fill the table from your DAO or service. */
     protected abstract void loadTableData();
 
     /** Called when Add is pressed. Validate, save, reload, clear the form. */
@@ -294,8 +311,7 @@ public abstract class BaseModulePanel extends JPanel {
      * @param query the trimmed text, empty when the box was cleared
      */
     protected void onSearch(String query) {
-        // Default: no filtering. Override this to re-query your DAO, or to
-        // filter the rows you already hold in memory.
+        // Default: no filtering.
     }
 
     // ---------------------------------------------------------------------
@@ -309,6 +325,14 @@ public abstract class BaseModulePanel extends JPanel {
             tableModel.addRow(row);
         }
         TableStyler.fitColumns(tblData);
+    }
+
+    /**
+     * Changes the message shown when the table is empty, so a screen can say
+     * something more useful than the default.
+     */
+    protected void setEmptyState(String message, String hint) {
+        tableHost.setMessage(message, hint);
     }
 
     /** The selected row index in <b>model</b> coordinates, or -1 if none. */
@@ -325,7 +349,7 @@ public abstract class BaseModulePanel extends JPanel {
 
     /**
      * Shows a short message in the window's status bar. Safe to call even when
-     * the panel is not inside a {@link MainFrame} (in a unit test, say).
+     * the panel is not inside a {@link MainFrame}.
      */
     protected void setStatus(String message) {
         MainFrame frame = (MainFrame) SwingUtilities.getAncestorOfClass(MainFrame.class, this);

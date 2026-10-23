@@ -30,6 +30,14 @@
             <version>${flatlaf.version}</version>
         </dependency>
 
+        <!-- FlatLaf extras: SVG icon support (FlatSVGIcon), used by
+             com.econest.ui.Icons to load the sidebar and dashboard icons. -->
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf-extras</artifactId>
+            <version>${flatlaf.version}</version>
+        </dependency>
+
         <!-- MySQL JDBC driver, used by com.econest.util.DBConnection -->
         <dependency>
             <groupId>com.mysql</groupId>
