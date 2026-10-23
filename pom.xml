@@ -18,9 +18,18 @@
         <main.class>com.econest.Main</main.class>
         <junit.version>5.10.2</junit.version>
         <mysql.connector.version>9.7.0</mysql.connector.version>
+        <flatlaf.version>3.6</flatlaf.version>
     </properties>
 
     <dependencies>
+        <!-- FlatLaf: modern flat Swing look and feel. Installed once at startup
+             in com.econest.Main; all colours/fonts come from com.econest.ui.Theme. -->
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf</artifactId>
+            <version>${flatlaf.version}</version>
+        </dependency>
+
         <!-- MySQL JDBC driver, used by com.econest.util.DBConnection -->
         <dependency>
             <groupId>com.mysql</groupId>
