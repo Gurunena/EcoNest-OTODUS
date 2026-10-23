@@ -36,7 +36,7 @@ public class PlaceholderPanel extends JPanel {
      */
     public PlaceholderPanel(String moduleName, String owner) {
         super(new BorderLayout());
-        setBackground(Theme.CONTENT_BG);
+        setBackground(Theme.PAGE_BG);
         setBorder(BorderFactory.createEmptyBorder(
                 Theme.PADDING, Theme.PADDING, Theme.PADDING, Theme.PADDING));
 
@@ -46,7 +46,7 @@ public class PlaceholderPanel extends JPanel {
 
         JLabel lblHint = new JLabel(owner + ": add your panel here");
         lblHint.setFont(Theme.FONT_HEADING);
-        lblHint.setForeground(Theme.STATUS_INFO);
+        lblHint.setForeground(Theme.ACCENT);
 
         JLabel lblHow = new JLabel(
                 "Extend BaseModulePanel, then register it on your line in MainFrame. "

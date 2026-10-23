@@ -24,6 +24,9 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.LinkedHashMap;
@@ -54,21 +57,20 @@ public class MainFrame extends JFrame {
     public static final String PAGE_NOTIFICATIONS = "Notifications";
 
     /**
-     * The nine navigation items, in the order they appear in the sidebar,
-     * each paired with its icon in {@code resources/images/icons}. The icon
-     * name has no extension - {@link Icons} resolves it - and a missing file
-     * just means that item shows without an icon.
+     * The nine navigation items, in sidebar order, each with its icon in
+     * {@code resources/images/icons}. "group" in the third slot draws a
+     * divider above that item.
      */
     private static final String[][] NAV_ITEMS = {
-            {PAGE_DASHBOARD, "dashboard"},
-            {PAGE_PRODUCTS, "products"},
-            {PAGE_CLIENTS, "clients"},
-            {PAGE_INVENTORY, "inventory"},
-            {PAGE_AGENTS, "agents"},
-            {PAGE_ORDERS, "orders"},
-            {PAGE_ASSIGNMENT, "assignment"},
-            {PAGE_REPORTS, "reports"},
-            {PAGE_NOTIFICATIONS, "notifications"}
+            {PAGE_DASHBOARD, "dashboard", ""},
+            {PAGE_PRODUCTS, "products", "group"},
+            {PAGE_CLIENTS, "clients", ""},
+            {PAGE_INVENTORY, "inventory", ""},
+            {PAGE_AGENTS, "agents", "group"},
+            {PAGE_ORDERS, "orders", ""},
+            {PAGE_ASSIGNMENT, "assignment", ""},
+            {PAGE_REPORTS, "reports", "group"},
+            {PAGE_NOTIFICATIONS, "notifications", ""}
     };
 
     // ---------------------------------------------------------------------
@@ -91,11 +93,12 @@ public class MainFrame extends JFrame {
     public MainFrame() {
         super("EcoNest - Home & Garden Retail");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1100, 700);
-        setMinimumSize(new Dimension(900, 600));
+        setSize(1280, 800);
+        // Comfortably inside a 1366x768 screen, so the layout never clips.
+        setMinimumSize(new Dimension(1100, 660));
         setLocationRelativeTo(null);
 
-        pnlContent.setBackground(Theme.CONTENT_BG);
+        pnlContent.setBackground(Theme.PAGE_BG);
 
         setLayout(new BorderLayout());
         add(buildSidebar(), BorderLayout.WEST);
@@ -104,7 +107,6 @@ public class MainFrame extends JFrame {
 
         registerPages();
 
-        // Open on the dashboard, with its sidebar item highlighted.
         showPage(PAGE_DASHBOARD);
         setStatus("Ready.");
     }
@@ -153,10 +155,7 @@ public class MainFrame extends JFrame {
     // Shell plumbing
     // ---------------------------------------------------------------------
 
-    /**
-     * Adds a page to the content area under the given name. The name must be
-     * one of the {@code PAGE_*} constants so the sidebar can find it.
-     */
+    /** Adds a page to the content area under the given name. */
     private void addPage(String pageName, JComponent page) {
         pnlContent.add(page, pageName);
     }
@@ -164,8 +163,6 @@ public class MainFrame extends JFrame {
     /**
      * Brings a page to the front and moves the sidebar highlight with it, so
      * the highlighted item is always the page you are looking at.
-     *
-     * @param pageName one of the {@code PAGE_*} constants
      */
     public void showPage(String pageName) {
         contentLayout.show(pnlContent, pageName);
@@ -181,54 +178,34 @@ public class MainFrame extends JFrame {
     /**
      * Shows a short message in the status bar at the bottom of the window.
      * Any panel can reach this through {@code BaseModulePanel.setStatus(...)}.
-     *
-     * @param message the text to show; null or blank clears the bar
      */
     public void setStatus(String message) {
         lblStatus.setText(message == null || message.isBlank() ? " " : message);
     }
 
-    /** Builds the dark green sidebar with the logo and the nav buttons. */
+    /** Builds the dark green sidebar with the logo and the nav items. */
     private JPanel buildSidebar() {
         JPanel pnlSidebar = new JPanel();
         pnlSidebar.setLayout(new BoxLayout(pnlSidebar, BoxLayout.Y_AXIS));
         pnlSidebar.setBackground(Theme.SIDEBAR_BG);
         pnlSidebar.setPreferredSize(new Dimension(Theme.SIDEBAR_WIDTH, 0));
-        pnlSidebar.setBorder(BorderFactory.createEmptyBorder(
-                Theme.GAP_LARGE, 0, Theme.GAP_LARGE, 0));
+        pnlSidebar.setMinimumSize(new Dimension(Theme.SIDEBAR_WIDTH, 0));
+        pnlSidebar.setBorder(BorderFactory.createEmptyBorder(Theme.GAP_LARGE, 0, Theme.GAP, 0));
 
-        // Logo block: the artwork when images/logo.png is present, otherwise
-        // just the "EcoNest" wordmark. Either way the tagline sits under it.
-        Icon logo = Icons.image("logo.png", 150, 52);
-        if (logo != null) {
-            JLabel lblLogoImage = new JLabel(logo);
-            lblLogoImage.setAlignmentX(Component.LEFT_ALIGNMENT);
-            lblLogoImage.setBorder(BorderFactory.createEmptyBorder(
-                    0, Theme.PADDING, Theme.GAP_SMALL, Theme.PADDING));
-            pnlSidebar.add(lblLogoImage);
-        }
-
-        JLabel lblLogo = new JLabel("EcoNest");
-        lblLogo.setFont(Theme.FONT_TITLE);
-        lblLogo.setForeground(Theme.ACCENT);
-        lblLogo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblLogo.setBorder(BorderFactory.createEmptyBorder(0, Theme.PADDING, 0, Theme.PADDING));
-
-        JLabel lblTagline = new JLabel("Home & Garden Retail");
-        lblTagline.setFont(Theme.FONT_SMALL);
-        lblTagline.setForeground(Theme.TEXT_ON_DARK);
-        lblTagline.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblTagline.setBorder(BorderFactory.createEmptyBorder(0, Theme.PADDING, 0, Theme.PADDING));
-
-        pnlSidebar.add(lblLogo);
-        pnlSidebar.add(Box.createVerticalStrut(2));
-        pnlSidebar.add(lblTagline);
+        pnlSidebar.add(buildLogoBlock());
         pnlSidebar.add(Box.createVerticalStrut(Theme.GAP_LARGE));
 
-        // One button per nav item, in order, each with its icon.
         for (String[] item : NAV_ITEMS) {
             String pageName = item[0];
             String iconName = item[1];
+            boolean startsGroup = "group".equals(item[2]);
+
+            if (startsGroup && !navButtons.isEmpty()) {
+                pnlSidebar.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+                pnlSidebar.add(sidebarDivider());
+                pnlSidebar.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+            }
+
             JButton btnNav = buildNavButton(pageName, iconName);
             navButtons.put(pageName, btnNav);
             navIcons.put(pageName, iconName);
@@ -240,49 +217,93 @@ public class MainFrame extends JFrame {
         return pnlSidebar;
     }
 
-    /** A single flat sidebar button that switches to its page when clicked. */
+    /** Logo image (when present), wordmark and tagline, with room to breathe. */
+    private JPanel buildLogoBlock() {
+        JPanel pnlLogo = new JPanel();
+        pnlLogo.setLayout(new BoxLayout(pnlLogo, BoxLayout.Y_AXIS));
+        pnlLogo.setOpaque(false);
+        pnlLogo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        pnlLogo.setMaximumSize(new Dimension(Integer.MAX_VALUE, 140));
+        pnlLogo.setBorder(BorderFactory.createEmptyBorder(
+                0, Theme.PADDING, 0, Theme.PADDING));
+
+        Icon logo = Icons.image("logo.png", 56, 56);
+        if (logo != null) {
+            JLabel lblLogoImage = new JLabel(logo);
+            lblLogoImage.setAlignmentX(Component.LEFT_ALIGNMENT);
+            pnlLogo.add(lblLogoImage);
+            pnlLogo.add(Box.createVerticalStrut(Theme.GAP_SMALL + 2));
+        }
+
+        JLabel lblWordmark = new JLabel("EcoNest");
+        lblWordmark.setFont(Theme.FONT_TITLE);
+        lblWordmark.setForeground(Color.WHITE);
+        lblWordmark.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel lblTagline = new JLabel("Home & Garden Retail");
+        lblTagline.setFont(Theme.FONT_SMALL);
+        lblTagline.setForeground(Theme.alpha(Theme.TEXT_ON_DARK, 170));
+        lblTagline.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        pnlLogo.add(lblWordmark);
+        pnlLogo.add(Box.createVerticalStrut(2));
+        pnlLogo.add(lblTagline);
+        return pnlLogo;
+    }
+
+    /** A hairline divider between sidebar groups. */
+    private JComponent sidebarDivider() {
+        JPanel divider = new JPanel();
+        divider.setBackground(Theme.SIDEBAR_DIVIDER);
+        divider.setAlignmentX(Component.LEFT_ALIGNMENT);
+        divider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        divider.setPreferredSize(new Dimension(Theme.SIDEBAR_WIDTH, 1));
+        return divider;
+    }
+
+    /**
+     * A sidebar item. The selected state is a rounded pill inset from the
+     * sidebar edges rather than a full-width block, so it reads as a chip.
+     */
     private JButton buildNavButton(String pageName, String iconName) {
-        JButton btnNav = new JButton(pageName);
+        NavButton btnNav = new NavButton(pageName);
         btnNav.setFont(Theme.FONT_BODY);
-        btnNav.setIconTextGap(Theme.GAP);
         btnNav.setForeground(Theme.TEXT_ON_DARK);
-        btnNav.setBackground(Theme.SIDEBAR_BG);
+        btnNav.setIconTextGap(Theme.GAP_SMALL + 2);
         btnNav.setHorizontalAlignment(SwingConstants.LEFT);
         btnNav.setFocusPainted(false);
         btnNav.setBorderPainted(false);
-        btnNav.setContentAreaFilled(true);
-        btnNav.setOpaque(true);
+        btnNav.setContentAreaFilled(false);
+        btnNav.setOpaque(false);
         btnNav.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btnNav.setBorder(BorderFactory.createEmptyBorder(0, Theme.PADDING, 0, Theme.PADDING));
+        btnNav.setBorder(BorderFactory.createEmptyBorder(
+                0, Theme.NAV_PILL_INSET + Theme.GAP_SMALL + 4, 0, Theme.GAP));
         btnNav.setAlignmentX(Component.LEFT_ALIGNMENT);
         btnNav.setMaximumSize(new Dimension(Integer.MAX_VALUE, Theme.NAV_BUTTON_HEIGHT));
         btnNav.setPreferredSize(new Dimension(Theme.SIDEBAR_WIDTH, Theme.NAV_BUTTON_HEIGHT));
+        btnNav.setToolTipText(pageName);
 
         btnNav.addActionListener(e -> showPage(pageName));
-
-        // Hover feedback, but never on the active item: its highlight wins.
         btnNav.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
-                if (!pageName.equals(activePage)) {
-                    btnNav.setBackground(Theme.SIDEBAR_HOVER);
-                }
+                btnNav.hovered = true;
+                btnNav.repaint();
             }
 
             @Override
             public void mouseExited(MouseEvent e) {
-                if (!pageName.equals(activePage)) {
-                    btnNav.setBackground(Theme.SIDEBAR_BG);
-                }
+                btnNav.hovered = false;
+                btnNav.repaint();
             }
         });
         return btnNav;
     }
 
     /**
-     * Repaints every nav button so exactly one - the active page - is
-     * highlighted. Driven by {@link #activePage}, so the highlight can never
-     * drift away from the page on screen.
+     * Repaints every nav item so exactly one - the active page - wears the
+     * pill. Driven by {@link #activePage}, so the highlight can never drift
+     * away from the page on screen.
      */
     private void refreshNavHighlight() {
         for (Map.Entry<String, JButton> entry : navButtons.entrySet()) {
@@ -290,15 +311,42 @@ public class MainFrame extends JFrame {
             boolean isActive = pageName.equals(activePage);
             JButton btnNav = entry.getValue();
 
-            Color foreground = isActive ? Theme.TEXT_ON_ACCENT : Theme.TEXT_ON_DARK;
-            btnNav.setBackground(isActive ? Theme.ACCENT : Theme.SIDEBAR_BG);
+            Color foreground = isActive ? Color.WHITE : Theme.TEXT_ON_DARK;
             btnNav.setForeground(foreground);
             btnNav.setFont(isActive ? Theme.FONT_BODY_BOLD : Theme.FONT_BODY);
-
-            // Re-tint the icon so it tracks the text colour. Null when the
-            // SVG is missing, which just leaves the button text-only.
             btnNav.setIcon(Icons.icon(
                     navIcons.get(pageName), Theme.ICON_SIZE_NAV, foreground));
+
+            if (btnNav instanceof NavButton nav) {
+                nav.active = isActive;
+            }
+            btnNav.repaint();
+        }
+    }
+
+    /** A sidebar item that paints its own rounded pill. */
+    private static class NavButton extends JButton {
+
+        boolean active;
+        boolean hovered;
+
+        NavButton(String text) {
+            super(text);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            if (active || hovered) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                        RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(active ? Theme.SIDEBAR_SELECTED : Theme.SIDEBAR_HOVER);
+                g2.fillRoundRect(Theme.NAV_PILL_INSET, 2,
+                        getWidth() - 2 * Theme.NAV_PILL_INSET, getHeight() - 4,
+                        Theme.CORNER_RADIUS, Theme.CORNER_RADIUS);
+                g2.dispose();
+            }
+            super.paintComponent(g);
         }
     }
 
@@ -310,10 +358,10 @@ public class MainFrame extends JFrame {
         JPanel pnlStatus = new JPanel(new BorderLayout());
         pnlStatus.setBackground(Theme.STATUS_BAR_BG);
         pnlStatus.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER),
+                BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.CARD_BORDER),
                 BorderFactory.createEmptyBorder(
                         Theme.GAP_SMALL, Theme.PADDING, Theme.GAP_SMALL, Theme.PADDING)));
-        pnlStatus.add(lblStatus, BorderLayout.WEST);
+        pnlStatus.add(lblStatus, BorderLayout.CENTER);
         return pnlStatus;
     }
 }

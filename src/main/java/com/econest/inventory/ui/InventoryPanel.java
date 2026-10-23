@@ -87,8 +87,11 @@ public class InventoryPanel extends BaseModulePanel {
         super("Stock / Inventory", COLUMNS);
         this.service = service;
 
-        // Low stock shows red through the shared status renderer.
+        // Status renders as a coloured pill; the counts read as numbers.
         TableStyler.colourStatusColumn(tblData, COL_STATUS);
+        TableStyler.rightAlign(tblData, COL_ID, 3, 4);
+        setEmptyState("No stock items found",
+                "Try a different search, or check the database connection.");
 
         // Retune the template's buttons for a stock screen.
         btnAdd.setText("Restock");
@@ -100,7 +103,7 @@ public class InventoryPanel extends BaseModulePanel {
         btnReorder = Buttons.secondary("Reorder level");
         btnReorder.setToolTipText("Set the threshold that marks this product low");
         btnReorder.addActionListener(e -> setReorderLevel());
-        pnlActions.add(btnReorder, 2);
+        pnlActions.add(btnReorder, 2);   // Restock | Adjust | Reorder level | Clear
 
         tblData.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -122,17 +125,17 @@ public class InventoryPanel extends BaseModulePanel {
         lblSelected.setForeground(Theme.TEXT_MUTED);
         lblSelected.setAlignmentX(JPanel.LEFT_ALIGNMENT);
 
-        txtRestockQty = FormFields.textField();
+        txtRestockQty = FormFields.textField("e.g. 20");
         cmbSupplier = FormFields.comboBox(new SupplierChoice[0]);
-        txtReceivedDate = FormFields.textField();
+        txtReceivedDate = FormFields.textField("yyyy-mm-dd");
         txtReceivedDate.setText(LocalDate.now().toString());
         txtReceivedDate.setToolTipText("yyyy-mm-dd");
 
-        txtAdjustQty = FormFields.textField();
+        txtAdjustQty = FormFields.textField("e.g. -3");
         txtAdjustQty.setToolTipText("Use a minus sign to remove stock, e.g. -3");
-        txtAdjustReason = FormFields.textField();
+        txtAdjustReason = FormFields.textField("e.g. damaged in transit");
 
-        txtReorderLevel = FormFields.textField();
+        txtReorderLevel = FormFields.textField("e.g. 10");
 
         form.add(FormFields.heading("Selected product"));
         form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
