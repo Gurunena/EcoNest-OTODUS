@@ -11,6 +11,7 @@ import com.econest.report.ui.ReportPanel;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
@@ -19,6 +20,7 @@ import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -51,17 +53,22 @@ public class MainFrame extends JFrame {
     public static final String PAGE_REPORTS = "Reports";
     public static final String PAGE_NOTIFICATIONS = "Notifications";
 
-    /** The nine navigation items, in the order they appear in the sidebar. */
-    private static final String[] NAV_ITEMS = {
-            PAGE_DASHBOARD,
-            PAGE_PRODUCTS,
-            PAGE_CLIENTS,
-            PAGE_INVENTORY,
-            PAGE_AGENTS,
-            PAGE_ORDERS,
-            PAGE_ASSIGNMENT,
-            PAGE_REPORTS,
-            PAGE_NOTIFICATIONS
+    /**
+     * The nine navigation items, in the order they appear in the sidebar,
+     * each paired with its icon in {@code resources/images/icons}. The icon
+     * name has no extension - {@link Icons} resolves it - and a missing file
+     * just means that item shows without an icon.
+     */
+    private static final String[][] NAV_ITEMS = {
+            {PAGE_DASHBOARD, "dashboard"},
+            {PAGE_PRODUCTS, "products"},
+            {PAGE_CLIENTS, "clients"},
+            {PAGE_INVENTORY, "inventory"},
+            {PAGE_AGENTS, "agents"},
+            {PAGE_ORDERS, "orders"},
+            {PAGE_ASSIGNMENT, "assignment"},
+            {PAGE_REPORTS, "reports"},
+            {PAGE_NOTIFICATIONS, "notifications"}
     };
 
     // ---------------------------------------------------------------------
@@ -74,6 +81,9 @@ public class MainFrame extends JFrame {
 
     /** Sidebar buttons by page name, so we can repaint the active one. */
     private final Map<String, JButton> navButtons = new LinkedHashMap<>();
+
+    /** Icon name per page, so the icon can be re-tinted with the highlight. */
+    private final Map<String, String> navIcons = new LinkedHashMap<>();
 
     /** The page currently on screen; the sidebar highlight always matches it. */
     private String activePage;
@@ -187,7 +197,17 @@ public class MainFrame extends JFrame {
         pnlSidebar.setBorder(BorderFactory.createEmptyBorder(
                 Theme.GAP_LARGE, 0, Theme.GAP_LARGE, 0));
 
-        // Logo block.
+        // Logo block: the artwork when images/logo.png is present, otherwise
+        // just the "EcoNest" wordmark. Either way the tagline sits under it.
+        Icon logo = Icons.image("logo.png", 150, 52);
+        if (logo != null) {
+            JLabel lblLogoImage = new JLabel(logo);
+            lblLogoImage.setAlignmentX(Component.LEFT_ALIGNMENT);
+            lblLogoImage.setBorder(BorderFactory.createEmptyBorder(
+                    0, Theme.PADDING, Theme.GAP_SMALL, Theme.PADDING));
+            pnlSidebar.add(lblLogoImage);
+        }
+
         JLabel lblLogo = new JLabel("EcoNest");
         lblLogo.setFont(Theme.FONT_TITLE);
         lblLogo.setForeground(Theme.ACCENT);
@@ -205,10 +225,13 @@ public class MainFrame extends JFrame {
         pnlSidebar.add(lblTagline);
         pnlSidebar.add(Box.createVerticalStrut(Theme.GAP_LARGE));
 
-        // One button per nav item, in order.
-        for (String item : NAV_ITEMS) {
-            JButton btnNav = buildNavButton(item);
-            navButtons.put(item, btnNav);
+        // One button per nav item, in order, each with its icon.
+        for (String[] item : NAV_ITEMS) {
+            String pageName = item[0];
+            String iconName = item[1];
+            JButton btnNav = buildNavButton(pageName, iconName);
+            navButtons.put(pageName, btnNav);
+            navIcons.put(pageName, iconName);
             pnlSidebar.add(btnNav);
             pnlSidebar.add(Box.createVerticalStrut(2));
         }
@@ -218,9 +241,10 @@ public class MainFrame extends JFrame {
     }
 
     /** A single flat sidebar button that switches to its page when clicked. */
-    private JButton buildNavButton(String pageName) {
+    private JButton buildNavButton(String pageName, String iconName) {
         JButton btnNav = new JButton(pageName);
         btnNav.setFont(Theme.FONT_BODY);
+        btnNav.setIconTextGap(Theme.GAP);
         btnNav.setForeground(Theme.TEXT_ON_DARK);
         btnNav.setBackground(Theme.SIDEBAR_BG);
         btnNav.setHorizontalAlignment(SwingConstants.LEFT);
@@ -262,11 +286,19 @@ public class MainFrame extends JFrame {
      */
     private void refreshNavHighlight() {
         for (Map.Entry<String, JButton> entry : navButtons.entrySet()) {
-            boolean isActive = entry.getKey().equals(activePage);
+            String pageName = entry.getKey();
+            boolean isActive = pageName.equals(activePage);
             JButton btnNav = entry.getValue();
+
+            Color foreground = isActive ? Theme.TEXT_ON_ACCENT : Theme.TEXT_ON_DARK;
             btnNav.setBackground(isActive ? Theme.ACCENT : Theme.SIDEBAR_BG);
-            btnNav.setForeground(isActive ? Theme.TEXT_ON_ACCENT : Theme.TEXT_ON_DARK);
+            btnNav.setForeground(foreground);
             btnNav.setFont(isActive ? Theme.FONT_BODY_BOLD : Theme.FONT_BODY);
+
+            // Re-tint the icon so it tracks the text colour. Null when the
+            // SVG is missing, which just leaves the button text-only.
+            btnNav.setIcon(Icons.icon(
+                    navIcons.get(pageName), Theme.ICON_SIZE_NAV, foreground));
         }
     }
 

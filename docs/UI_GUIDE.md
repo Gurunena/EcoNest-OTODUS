@@ -155,6 +155,13 @@ calls it, so you only need it if you fill the model some other way.
 **`FormFields`** — `textField()`, `comboBox(items)`, `label(text)`,
 `heading(text)`, `row(caption, input)`.
 
+**`Icons`** — `Icons.icon("inventory", 18, Theme.TEXT_ON_DARK)` for an SVG
+from `resources/images/icons` (the colour argument re-tints it), and
+`Icons.image("logo.png", 150, 52)` for a scaled bitmap from
+`resources/images`. Both return `null` when the file isn't there, so always
+null-check and skip the image rather than assuming it loaded. File names and
+sizes are listed in `src/main/resources/images/README.txt`.
+
 **`Dialogs`** — `info`, `error`, `warn`, `confirm`, `confirmDelete`,
 `errorAt(parent, message, field)`. The base class already calls
 `confirmDelete` before `onDelete()`, so don't ask twice.

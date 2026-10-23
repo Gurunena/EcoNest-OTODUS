@@ -93,6 +93,26 @@ public final class Theme {
     public static final Color STATUS_INFO = new Color(0x15, 0x65, 0xC0);
 
     // ---------------------------------------------------------------------
+    // Status tints
+    //
+    // Pale versions of the four status colours, for the background of a card
+    // or a highlighted panel. Pair each tint with its status colour for the
+    // icon and the number drawn on top of it.
+    // ---------------------------------------------------------------------
+
+    /** Pale green card background, pairs with {@link #STATUS_SUCCESS}. */
+    public static final Color TINT_SUCCESS = new Color(0xE8, 0xF5, 0xE9);
+
+    /** Pale amber card background, pairs with {@link #STATUS_PENDING}. */
+    public static final Color TINT_PENDING = new Color(0xFF, 0xF4, 0xDF);
+
+    /** Pale red card background, pairs with {@link #STATUS_DANGER}. */
+    public static final Color TINT_DANGER = new Color(0xFD, 0xEA, 0xEA);
+
+    /** Pale blue card background, pairs with {@link #STATUS_INFO}. */
+    public static final Color TINT_INFO = new Color(0xE6, 0xF0, 0xFB);
+
+    // ---------------------------------------------------------------------
     // Fonts
     //
     // One family for the whole app, four sizes. "Segoe UI" is the Windows
@@ -101,6 +121,9 @@ public final class Theme {
 
     /** The single font family used everywhere. */
     public static final String FONT_FAMILY = "Segoe UI";
+
+    /** Big numbers on the dashboard cards. */
+    public static final Font FONT_DISPLAY = new Font(FONT_FAMILY, Font.BOLD, 30);
 
     /** Window / screen titles (e.g. the sidebar logo, a panel heading). */
     public static final Font FONT_TITLE = new Font(FONT_FAMILY, Font.BOLD, 22);
@@ -149,6 +172,12 @@ public final class Theme {
 
     /** Corner radius hint for FlatLaf-styled buttons and fields. */
     public static final int CORNER_RADIUS = 6;
+
+    /** Size of the small icons beside the sidebar navigation items. */
+    public static final int ICON_SIZE_NAV = 18;
+
+    /** Size of the icons on the dashboard cards. */
+    public static final int ICON_SIZE_CARD = 26;
 
     /** Default width of a text field in a form. */
     public static final int FIELD_WIDTH = 200;
