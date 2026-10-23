@@ -10,6 +10,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -206,6 +207,12 @@ public class DeliveryAssignmentDaoImpl implements DeliveryAssignmentDao {
                     throw new SQLException(
                             "That agent is no longer available. Refresh and pick another.");
                 }
+            } catch (SQLIntegrityConstraintViolationException ex) {
+                // uq_assignments_order: somebody assigned this order between
+                // the list being drawn and Assign being pressed.
+                throw new SQLException(
+                        "Order " + orderId + " already has a delivery agent. Press Refresh "
+                                + "to see who, then use Reassign if you want to change it.", ex);
             }
 
             setOrderStatus(conn, orderId, STATUS_OUT_FOR_DELIVERY);

@@ -69,6 +69,7 @@ public final class TableStyler {
      * cannot push the rest of the table off screen.</p>
      */
     public static void fitColumns(JTable tbl) {
+        int total = 0;
         for (int col = 0; col < tbl.getColumnCount(); col++) {
             TableColumn column = tbl.getColumnModel().getColumn(col);
 
@@ -86,9 +87,20 @@ public final class TableStyler {
                 width = Math.max(width, cell.getPreferredSize().width);
             }
 
-            column.setPreferredWidth(
-                    Math.min(width + 2 * Theme.GAP, MAX_AUTO_WIDTH));
+            int fitted = Math.min(width + 2 * Theme.GAP, MAX_AUTO_WIDTH);
+            column.setPreferredWidth(fitted);
+            total += fitted;
         }
+
+        // If the columns fit, let them stretch to fill the table. If they do
+        // not - a wide table squeezed next to a form, say - stop resizing so
+        // each column keeps its full width and the scroll pane gives the user
+        // a horizontal scrollbar, rather than cutting every cell off with an
+        // ellipsis.
+        int available = tbl.getParent() == null ? 0 : tbl.getParent().getWidth();
+        tbl.setAutoResizeMode(available > 0 && total > available
+                ? JTable.AUTO_RESIZE_OFF
+                : JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
     }
 
     /** Upper bound for an auto-sized column, in pixels. */
