@@ -6,17 +6,29 @@ package com.econest.client.model;
  */
 public class OfficeClient extends Client {
 
+    private String companyRegistrationNo;   // optional, e.g. "PV00123456"
     private String contactPerson;
+    private String department;              // optional, e.g. "Facilities"
 
     public OfficeClient(int clientId, String companyName, ContactDetails contactDetails,
-                        String contactPerson) {
+                        String companyRegistrationNo, String contactPerson, String department) {
         super(clientId, companyName, contactDetails);
+        this.companyRegistrationNo = companyRegistrationNo;
         this.contactPerson = contactPerson;
+        this.department = department;
     }
 
     @Override
     public ClientType getClientType() {
         return ClientType.OFFICE;
+    }
+
+    public String getCompanyRegistrationNo() {
+        return companyRegistrationNo;
+    }
+
+    public void setCompanyRegistrationNo(String companyRegistrationNo) {
+        this.companyRegistrationNo = companyRegistrationNo;
     }
 
     public String getContactPerson() {
@@ -25,5 +37,13 @@ public class OfficeClient extends Client {
 
     public void setContactPerson(String contactPerson) {
         this.contactPerson = contactPerson;
+    }
+
+    public String getDepartment() {
+        return department;
+    }
+
+    public void setDepartment(String department) {
+        this.department = department;
     }
 }

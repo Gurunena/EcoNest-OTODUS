@@ -1,16 +1,20 @@
 package com.econest.client.model;
 
+import java.time.LocalDateTime;
+
 /**
  * Base class for every EcoNest client.
  *
  * It is abstract because there is no "plain" client: every client is either a
  * HouseholdClient or an OfficeClient. Both inherit the fields below.
+ * All of them are stored in one row of the clients table.
  */
 public abstract class Client {
 
     private int clientId;                    // 0 until the database gives it an id
     private String name;                     // person's name (household) or company name (office)
     private ContactDetails contactDetails;   // email, phone, address
+    private LocalDateTime registeredAt;      // filled in by the database
 
     protected Client(int clientId, String name, ContactDetails contactDetails) {
         this.clientId = clientId;
@@ -45,6 +49,14 @@ public abstract class Client {
         this.contactDetails = contactDetails;
     }
 
+    public LocalDateTime getRegisteredAt() {
+        return registeredAt;
+    }
+
+    public void setRegisteredAt(LocalDateTime registeredAt) {
+        this.registeredAt = registeredAt;
+    }
+
     // Shortcuts, so teammates can write client.getEmail()
     // instead of client.getContactDetails().getEmail()
     public String getEmail() {
@@ -55,8 +67,9 @@ public abstract class Client {
         return contactDetails.getPhone();
     }
 
+    /** Full address on one line, e.g. "42 Lake Road, Apt 3B, Colombo, 00500". */
     public String getAddress() {
-        return contactDetails.getAddress();
+        return contactDetails.getFullAddress();
     }
 
     @Override
