@@ -4,6 +4,7 @@ package com.econest.ui;
 // One import per module, in sidebar order. When you replace a placeholder
 // with your real panel, add your import here and change your single line in
 // registerPages() below.
+import com.econest.client.ui.ClientPanel;
 import com.econest.delivery.ui.DeliveryAssignmentPanel;
 import com.econest.inventory.ui.InventoryPanel;
 import com.econest.report.ui.ReportPanel;
@@ -130,7 +131,7 @@ public class MainFrame extends JFrame {
         addPage(PAGE_PRODUCTS, new PlaceholderPanel(PAGE_PRODUCTS, "Products owner"));
 
         // Clients module
-        addPage(PAGE_CLIENTS, new PlaceholderPanel(PAGE_CLIENTS, "Clients owner"));
+        addPage(PAGE_CLIENTS, new ClientPanel());
 
         // Stock / Inventory module
         addPage(PAGE_INVENTORY, new InventoryPanel());
