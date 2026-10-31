@@ -28,6 +28,20 @@ public class HouseholdClient extends Client {
         return ClientType.HOUSEHOLD;
     }
 
+    @Override
+    public String getEmailGreeting() {
+        return "Dear " + getName() + ",";
+    }
+
+    @Override
+    public String getDeliveryNote() {
+        String call = "Our delivery agent will call you on " + getPhone() + " before arriving.";
+        if (preferredDeliverySlot == null || preferredDeliverySlot.equals("Any time")) {
+            return call;
+        }
+        return "We'll aim to arrive in your preferred slot (" + preferredDeliverySlot + "). " + call;
+    }
+
     public Integer getHouseholdSize() {
         return householdSize;
     }

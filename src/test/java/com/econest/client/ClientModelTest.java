@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Checks the Client classes on their own (inheritance, polymorphism, composition). */
 class ClientModelTest {
@@ -44,6 +45,19 @@ class ClientModelTest {
         assertEquals("0712345678", client.getPhone());
         assertEquals("42 Lake Road, Colombo", client.getAddress());
         assertEquals("#7 Amara Silva (Household)", client.toString());
+    }
+
+    @Test
+    void greetingAndDeliveryNoteDependOnTheClientType() {
+        ContactDetails contact = new ContactDetails("a@b.com", "0712345678", "1 Main St", null, "Colombo", null);
+        Client household = new HouseholdClient(1, "Amara Silva", contact, 4, "Weekday evening");
+        Client office = new OfficeClient(2, "BlueSky Ltd", contact, null, "Rashmi Gunawardena", null);
+
+        // Same method, different answer for each subclass (polymorphism)
+        assertEquals("Dear Amara Silva,", household.getEmailGreeting());
+        assertEquals("Dear Rashmi Gunawardena,", office.getEmailGreeting());
+        assertTrue(household.getDeliveryNote().contains("Weekday evening"));
+        assertTrue(office.getDeliveryNote().contains("BlueSky Ltd"));
     }
 
     @Test

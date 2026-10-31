@@ -23,6 +23,21 @@ public class OfficeClient extends Client {
         return ClientType.OFFICE;
     }
 
+    @Override
+    public String getEmailGreeting() {
+        // Write to the contact person, not the company
+        if (contactPerson == null || contactPerson.isBlank()) {
+            return "Dear " + getName() + " team,";
+        }
+        return "Dear " + contactPerson + ",";
+    }
+
+    @Override
+    public String getDeliveryNote() {
+        return "We'll deliver to " + getName() + " during office hours (9am - 5pm). "
+                + "Please let reception know that " + contactPerson + " is expecting an EcoNest delivery.";
+    }
+
     public String getCompanyRegistrationNo() {
         return companyRegistrationNo;
     }

@@ -25,6 +25,12 @@ public abstract class Client {
     /** Each subclass says which type it is. */
     public abstract ClientType getClientType();
 
+    /** First line of an email to this client, e.g. "Dear Amara Silva," (used by Task 8). */
+    public abstract String getEmailGreeting();
+
+    /** Delivery instructions for this kind of client (used in the dispatch email, Task 8). */
+    public abstract String getDeliveryNote();
+
     public int getClientId() {
         return clientId;
     }
