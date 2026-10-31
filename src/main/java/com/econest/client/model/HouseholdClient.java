@@ -3,20 +3,24 @@ package com.econest.client.model;
 /** A private customer buying for their home. HouseholdClient IS-A Client. */
 public class HouseholdClient extends Client {
 
-    /** Choices for the "Preferred delivery time" drop-down. */
-    public static final String[] DELIVERY_TIMES = {
+    /** Choices for the "Preferred delivery slot" drop-down. */
+    public static final String[] DELIVERY_SLOTS = {
             "Any time",
-            "Morning (8am - 12pm)",
-            "Afternoon (12pm - 4pm)",
-            "Evening (4pm - 7pm)"
+            "Weekday morning",
+            "Weekday afternoon",
+            "Weekday evening",
+            "Saturday morning",
+            "Saturday afternoon"
     };
 
-    private String preferredDeliveryTime;
+    private Integer householdSize;          // Integer, not int, because it can be left empty (null)
+    private String preferredDeliverySlot;
 
     public HouseholdClient(int clientId, String name, ContactDetails contactDetails,
-                           String preferredDeliveryTime) {
+                           Integer householdSize, String preferredDeliverySlot) {
         super(clientId, name, contactDetails);
-        this.preferredDeliveryTime = preferredDeliveryTime;
+        this.householdSize = householdSize;
+        this.preferredDeliverySlot = preferredDeliverySlot;
     }
 
     @Override
@@ -24,11 +28,33 @@ public class HouseholdClient extends Client {
         return ClientType.HOUSEHOLD;
     }
 
-    public String getPreferredDeliveryTime() {
-        return preferredDeliveryTime;
+    @Override
+    public String getEmailGreeting() {
+        return "Dear " + getName() + ",";
     }
 
-    public void setPreferredDeliveryTime(String preferredDeliveryTime) {
-        this.preferredDeliveryTime = preferredDeliveryTime;
+    @Override
+    public String getDeliveryNote() {
+        String call = "Our delivery agent will call you on " + getPhone() + " before arriving.";
+        if (preferredDeliverySlot == null || preferredDeliverySlot.equals("Any time")) {
+            return call;
+        }
+        return "We'll aim to arrive in your preferred slot (" + preferredDeliverySlot + "). " + call;
+    }
+
+    public Integer getHouseholdSize() {
+        return householdSize;
+    }
+
+    public void setHouseholdSize(Integer householdSize) {
+        this.householdSize = householdSize;
+    }
+
+    public String getPreferredDeliverySlot() {
+        return preferredDeliverySlot;
+    }
+
+    public void setPreferredDeliverySlot(String preferredDeliverySlot) {
+        this.preferredDeliverySlot = preferredDeliverySlot;
     }
 }
