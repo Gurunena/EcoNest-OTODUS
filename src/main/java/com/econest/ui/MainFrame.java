@@ -6,6 +6,7 @@ package com.econest.ui;
 // registerPages() below.
 import com.econest.delivery.ui.DeliveryAssignmentPanel;
 import com.econest.inventory.ui.InventoryPanel;
+import com.econest.order.ui.OrderPanel;
 import com.econest.report.ui.ReportPanel;
 
 import javax.swing.BorderFactory;
@@ -139,7 +140,7 @@ public class MainFrame extends JFrame {
         addPage(PAGE_AGENTS, new PlaceholderPanel(PAGE_AGENTS, "Delivery Agents owner"));
 
         // Orders module
-        addPage(PAGE_ORDERS, new PlaceholderPanel(PAGE_ORDERS, "Orders owner"));
+        addPage(PAGE_ORDERS, new OrderPanel());
 
         // Delivery Assignment module
         addPage(PAGE_ASSIGNMENT, new DeliveryAssignmentPanel());
