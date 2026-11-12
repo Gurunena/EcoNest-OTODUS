@@ -6,7 +6,7 @@ Everything you need lives in two packages:
 
 | Package | What's in it |
 | --- | --- |
-| `com.econest.ui` | `Theme`, `MainFrame`, `BaseModulePanel`, `PlaceholderPanel`, `DashboardPanel` |
+| `com.econest.ui` | `Theme`, `MainFrame`, `BaseModulePanel`, `PlaceholderPanel`, `DashboardPanel`, `DashboardCard` / `DashboardCards` / `StatCard` |
 | `com.econest.ui.components` | `Buttons`, `TableStyler`, `FormFields`, `Dialogs`, `InputValidator` |
 
 The worked example is **`com.econest.inventory.ui.InventoryPanel`** — read it next
@@ -119,6 +119,21 @@ addPage(PAGE_CLIENTS, new ClientPanel());     // was: new PlaceholderPanel(...)
 
 Add your import at the top of the file next to the other module imports.
 Don't reorder, reformat or re-indent anyone else's line.
+
+### 4b. Add your card to the Dashboard
+
+The Dashboard builds itself from a list, so you never edit `DashboardPanel`:
+
+1. Open `com.econest.ui.DashboardCards` and find **your** module's line — it
+   holds a `StatCard.placeholder(...)` showing `0`.
+2. Replace it with a real card, keeping it to one line:
+   `new StatCard("Pending orders", "orders", Theme.TINT_PENDING, Theme.STATUS_PENDING, () -> String.valueOf(service.countByStatus(PENDING)))`
+3. The last argument is a `StatCard.ValueSource` — it runs on a **background
+   thread**, so put your service call there and let it throw if it fails.
+4. A failure shows `0` and logs one line; the Dashboard never breaks and never
+   pops up a dialog.
+5. Need more than one big number? Implement `DashboardCard` yourself
+   (`getTitle` / `getView` / `refresh`) and read its threading note first.
 
 ### 5. Use `Theme` and the helpers — never hard-code
 
@@ -243,7 +258,8 @@ Other conventions:
 ## Rules of the road
 
 1. Only touch your own module package, plus your single line in
-   `MainFrame.registerPages()`.
+   `MainFrame.registerPages()` and your single line in
+   `DashboardCards.register()`.
 2. No `new Color(...)` or `new Font(...)` outside `Theme`.
 3. Delete always goes through `Dialogs.confirmDelete` — the base class does
    this for you.

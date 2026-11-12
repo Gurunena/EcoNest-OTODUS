@@ -29,11 +29,14 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.RenderingHints;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.image.BufferedImage;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The landing page shown when the app opens.
@@ -59,18 +62,45 @@ public class DashboardPanel extends JPanel {
     /** How many rows each list card shows. */
     private static final int LIST_ROWS = 4;
 
+    /**
+     * Narrowest a card may get before the grid wraps to another row. Below
+     * about this, the icon circle and a figure like "Rs. 1,234,500" stop
+     * fitting side by side with the card's own padding.
+     */
+    private static final int MIN_CARD_WIDTH = 210;
+
+    /**
+     * Height of one row of cards. Lower than the 158 the single row of four
+     * used, because eight cards wrap onto two rows on a normal window and
+     * the lists underneath need the space back. Still comfortably clears the
+     * icon circle, the figure and the label plus the card's own padding.
+     */
+    private static final int CARD_HEIGHT = 140;
+
     private static final DateTimeFormatter WHEN =
             DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
-    /** The four KPI cards, left to right. */
-    private static final CardSpec[] CARDS = {
-            new CardSpec("Low stock items", "alert", Theme.TINT_DANGER, Theme.STATUS_DANGER),
-            new CardSpec("Pending orders", "clock", Theme.TINT_PENDING, Theme.STATUS_PENDING),
-            new CardSpec("Deliveries today", "assignment", Theme.TINT_SUCCESS, Theme.STATUS_SUCCESS),
-            new CardSpec("Revenue this month", "revenue", Theme.TINT_INFO, Theme.STATUS_INFO)
-    };
+    /**
+     * The cards on screen, in registry order.
+     *
+     * <p>This panel knows nothing about any of them beyond the three methods
+     * on {@link DashboardCard}. A module owner adds a card by editing their
+     * line in {@link DashboardCards#register()}, never this class.</p>
+     */
+    private final List<DashboardCard> cards;
 
-    private final JLabel[] lblValues = new JLabel[CARDS.length];
+    /** Holds the card views; its column count changes with the width. */
+    private final JPanel pnlCards = new JPanel();
+
+    /** Columns currently laid out, so a resize only relayouts when it must. */
+    private int cardColumns;
+
+    /**
+     * True while a refresh is in flight. Flipping between pages faster than
+     * the database answers would otherwise pile up SwingWorkers all asking
+     * for the same figures.
+     */
+    private final AtomicBoolean refreshing = new AtomicBoolean();
 
     private final DefaultTableModel lowStockModel =
             readOnlyModel(new String[]{"Product", "Qty", "Min", "Status"});
@@ -91,8 +121,18 @@ public class DashboardPanel extends JPanel {
      *              test to show fixed figures
      */
     public DashboardPanel(DashboardStats stats) {
+        this(stats, DashboardCards.register(stats));
+    }
+
+    /**
+     * @param stats the source of the numbers for the two list cards
+     * @param cards the cards to show; normally
+     *              {@link DashboardCards#register()}
+     */
+    public DashboardPanel(DashboardStats stats, List<DashboardCard> cards) {
         super(new BorderLayout(0, Theme.GAP));
         this.stats = stats;
+        this.cards = List.copyOf(cards);
 
         setBackground(Theme.PAGE_BG);
         setBorder(BorderFactory.createEmptyBorder(
@@ -106,28 +146,55 @@ public class DashboardPanel extends JPanel {
         add(pnlTop, BorderLayout.NORTH);
         add(buildLists(), BorderLayout.CENTER);
 
+        // CardLayout shows a page by making it visible, so this fires every
+        // time the sidebar comes back to the Dashboard. Listening here rather
+        // than calling out from MainFrame.showPage keeps the shared shell
+        // untouched - MainFrame still has exactly one line per module.
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentShown(ComponentEvent e) {
+                refresh();
+            }
+        });
+
         refresh();
     }
 
     /**
-     * Re-reads every number and list. Call it after a module saves something,
-     * so the cards do not go stale.
+     * Re-reads every card and both lists, on a background thread. Called
+     * each time the Dashboard is shown, and safe to call after a module
+     * saves something so the figures do not go stale.
+     *
+     * <p>Overlapping calls are dropped rather than queued - they would all
+     * be asking the database the same question.</p>
      */
     public final void refresh() {
+        if (!refreshing.compareAndSet(false, true)) {
+            return;
+        }
         new SwingWorker<Snapshot, Void>() {
             @Override
             protected Snapshot doInBackground() {
+                // Each card reads its own figure here, off the UI thread,
+                // and updates its own label on the EDT when it lands - see
+                // the threading note on DashboardCard. One slow or broken
+                // card cannot hold up the others or the lists below.
+                for (DashboardCard card : cards) {
+                    try {
+                        card.refresh();
+                    } catch (RuntimeException ex) {
+                        System.err.println("Dashboard: card \"" + card.getTitle()
+                                + "\" failed to refresh - " + ex);
+                    }
+                }
                 return new Snapshot(
-                        stats.lowStockItems(),
-                        stats.pendingOrders(),
-                        stats.deliveriesToday(),
-                        stats.revenueThisMonth(),
                         stats.topLowStock(LIST_ROWS),
                         stats.recentOrders(LIST_ROWS));
             }
 
             @Override
             protected void done() {
+                refreshing.set(false);
                 try {
                     show(get());
                 } catch (InterruptedException ex) {
@@ -143,11 +210,6 @@ public class DashboardPanel extends JPanel {
     }
 
     private void show(Snapshot data) {
-        setCardValue(0, data.lowStock());
-        setCardValue(1, data.pending());
-        setCardValue(2, data.deliveries());
-        setCardValue(3, data.revenue());
-
         lowStockModel.setRowCount(0);
         for (LowStockAlert alert : data.lowStockRows()) {
             int onHand = alert.getStockItem().getQuantityOnHand();
@@ -286,52 +348,64 @@ public class DashboardPanel extends JPanel {
     // KPI cards
     // ---------------------------------------------------------------------
 
+    /**
+     * Lays the registered cards out in a grid that wraps with the window.
+     *
+     * <p>The column count is not fixed, because the number of cards is not:
+     * eight across a 1280px window would leave each one about 140px wide,
+     * which is narrower than a card can be and still read. Instead the grid
+     * fits as many {@link #MIN_CARD_WIDTH} columns as the width allows and
+     * wraps the rest onto further rows.</p>
+     */
     private JPanel buildCards() {
-        JPanel pnlCards = new JPanel(new GridLayout(1, CARDS.length, Theme.GAP_SMALL, 0));
         pnlCards.setOpaque(false);
-        pnlCards.setPreferredSize(new Dimension(0, 158));
-        for (int i = 0; i < CARDS.length; i++) {
-            pnlCards.add(buildCard(i, CARDS[i]));
+        for (DashboardCard card : cards) {
+            pnlCards.add(card.getView());
         }
+        applyColumns(columnsFor(getWidth()));
+
+        // Re-grid as the window resizes. Guarded on the column count, so
+        // dragging the edge does not relayout on every pixel.
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                applyColumns(columnsFor(getWidth()));
+            }
+        });
         return pnlCards;
     }
 
     /**
-     * One KPI card: tinted icon circle on top, then the number, then the
-     * label. Stacked rather than side by side so a long figure like
-     * "Rs. 1,234,500" gets the card's full width instead of being cut off.
+     * How many cards fit across, given the page width. At least one, never
+     * more than there are cards.
      */
-    private Card buildCard(int index, CardSpec spec) {
-        Card card = new Card(new BorderLayout()).withPadding(Theme.GAP);
+    private int columnsFor(int width) {
+        // Before the first layout the width is 0; assume the window's own
+        // starting size so the first paint is already right.
+        int usable = (width > 0 ? width : 1280)
+                - 2 * Theme.PADDING - Theme.SIDEBAR_WIDTH;
+        int fits = (usable + Theme.GAP_SMALL) / (MIN_CARD_WIDTH + Theme.GAP_SMALL);
+        return Math.max(1, Math.min(cards.size(), fits));
+    }
 
-        Icon icon = Icons.icon(spec.iconName(), Theme.ICON_SIZE_CARD, spec.accent());
-        JPanel circle = Card.iconCircle(icon == null ? null : new JLabel(icon), spec.tint());
-        circle.setAlignmentX(Component.LEFT_ALIGNMENT);
+    /** Switches the grid to {@code columns} wide, if it is not already. */
+    private void applyColumns(int columns) {
+        if (columns == cardColumns || cards.isEmpty()) {
+            return;
+        }
+        cardColumns = columns;
 
-        JLabel lblValue = new JLabel(DashboardStats.UNAVAILABLE);
-        lblValue.setFont(Theme.FONT_DISPLAY);
-        lblValue.setForeground(Theme.TEXT_PRIMARY);
-        lblValue.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblValues[index] = lblValue;
+        pnlCards.setLayout(new GridLayout(0, columns, Theme.GAP_SMALL, Theme.GAP_SMALL));
 
-        JLabel lblCaption = new JLabel(spec.caption());
-        lblCaption.setFont(Theme.FONT_SMALL);
-        lblCaption.setForeground(Theme.TEXT_MUTED);
-        lblCaption.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblCaption.setToolTipText(spec.caption());
+        // The grid sits in a BorderLayout.NORTH, which honours the preferred
+        // height only - so it has to grow with the number of rows or the
+        // wrapped cards get clipped.
+        int rows = (cards.size() + columns - 1) / columns;
+        pnlCards.setPreferredSize(new Dimension(0,
+                rows * CARD_HEIGHT + (rows - 1) * Theme.GAP_SMALL));
 
-        JPanel pnlStack = new JPanel();
-        pnlStack.setLayout(new BoxLayout(pnlStack, BoxLayout.Y_AXIS));
-        pnlStack.setOpaque(false);
-        pnlStack.add(circle);
-        pnlStack.add(Box.createVerticalStrut(Theme.GAP_SMALL + 2));
-        pnlStack.add(lblValue);
-        pnlStack.add(Box.createVerticalStrut(2));
-        pnlStack.add(lblCaption);
-        pnlStack.add(Box.createVerticalGlue());
-
-        card.add(pnlStack, BorderLayout.CENTER);
-        return card;
+        pnlCards.revalidate();
+        pnlCards.repaint();
     }
 
     // ---------------------------------------------------------------------
@@ -389,14 +463,13 @@ public class DashboardPanel extends JPanel {
     // Helpers
     // ---------------------------------------------------------------------
 
-    /** Everything the dashboard shows, fetched in one background pass. */
-    private record Snapshot(String lowStock, String pending, String deliveries, String revenue,
-                            List<LowStockAlert> lowStockRows,
+    /**
+     * The two list cards' rows, fetched in one background pass. The card
+     * figures are not in here - each {@link DashboardCard} fetches and
+     * applies its own.
+     */
+    private record Snapshot(List<LowStockAlert> lowStockRows,
                             List<DashboardStats.OrderSummary> recentOrders) {
-    }
-
-    /** Static description of one KPI card. */
-    private record CardSpec(String caption, String iconName, Color tint, Color accent) {
     }
 
     /**
@@ -422,27 +495,5 @@ public class DashboardPanel extends JPanel {
                 return false;
             }
         };
-    }
-
-    /**
-     * Kept for compatibility: the cards now take their numbers from
-     * {@link DashboardStats} through {@link #refresh()}.
-     *
-     * @param index 0 = low stock, 1 = pending orders, 2 = deliveries, 3 = revenue
-     */
-    public void setCardValue(int index, String value) {
-        if (index < 0 || index >= lblValues.length) {
-            return;
-        }
-        JLabel lbl = lblValues[index];
-        lbl.setText(value);
-        lbl.setToolTipText(value);
-        // "Rs. 1,234,500" will not fit at 28px in a quarter-width card, so
-        // step the size down with the length instead of letting Swing clip
-        // it to an ellipsis.
-        int length = value == null ? 0 : value.length();
-        lbl.setFont(length <= 5 ? Theme.FONT_DISPLAY
-                : length <= 9 ? Theme.FONT_TITLE
-                : Theme.FONT_HEADING);
     }
 }
