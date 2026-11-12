@@ -3,6 +3,8 @@ package com.econest.ui;
 import com.econest.delivery.model.DeliveryAssignment;
 import com.econest.delivery.model.PendingOrder;
 import com.econest.delivery.service.DeliveryAssignmentService;
+import com.econest.order.model.OrderStatus;
+import com.econest.order.service.OrderService;
 import com.econest.report.model.LowStockAlert;
 import com.econest.report.service.ReportService;
 
@@ -36,17 +38,20 @@ public class DashboardStats {
 
     private final ReportService reportService;
     private final DeliveryAssignmentService deliveryService;
+    private final OrderService orderService;
 
     /** Production constructor: the real services. */
     public DashboardStats() {
-        this(new ReportService(), new DeliveryAssignmentService());
+        this(new ReportService(), new DeliveryAssignmentService(), new OrderService());
     }
 
     /** Injectable constructor, so a test can pass fakes. */
     public DashboardStats(ReportService reportService,
-                          DeliveryAssignmentService deliveryService) {
+                          DeliveryAssignmentService deliveryService,
+                          OrderService orderService) {
         this.reportService = reportService;
         this.deliveryService = deliveryService;
+        this.orderService = orderService;
     }
 
     // -----------------------------------------------------------------
@@ -65,17 +70,16 @@ public class DashboardStats {
     /**
      * Orders still waiting to be dealt with.
      *
-     * <p>Counted as orders with status PENDING that have no delivery agent,
-     * because that is what the delivery service exposes. A dedicated order
-     * service would be able to count every open order; this is the honest
-     * approximation available today.</p>
+     * <p>Now a straight count of orders in the PENDING status, through
+     * {@code OrderService.countByStatus}. It used to be approximated from
+     * the unassigned-orders list, because that was all the service layer
+     * exposed - an order that was pending but already had an agent was
+     * missed. The order module provides the real count, so the
+     * approximation is gone.</p>
      */
     public String pendingOrders() {
         try {
-            long count = deliveryService.findUnassignedOrders().stream()
-                    .filter(order -> "PENDING".equalsIgnoreCase(order.getStatus()))
-                    .count();
-            return String.valueOf(count);
+            return String.valueOf(orderService.countByStatus(OrderStatus.PENDING));
         } catch (Exception ex) {
             return unavailable("pending orders", ex);
         }
