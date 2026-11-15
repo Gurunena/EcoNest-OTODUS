@@ -40,4 +40,7 @@ public interface ClientDao {
 
     /** How many orders this client has (a client with orders must not be deleted). */
     int countOrders(int clientId) throws SQLException;
+
+    /** How many clients there are altogether (for the Dashboard card). */
+    int countAll() throws SQLException;
 }

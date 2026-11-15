@@ -43,8 +43,8 @@ public final class DashboardCards {
                         Theme.TINT_SUCCESS, Theme.STATUS_SUCCESS),
 
                 // Clients module
-                StatCard.placeholder("Clients", "clients",
-                        Theme.TINT_INFO, Theme.STATUS_INFO),
+                new StatCard("Clients", "clients", Theme.TINT_INFO, Theme.STATUS_INFO,
+                        () -> String.valueOf(new com.econest.client.service.ClientService().countClients())),
 
                 // Stock / Inventory module
                 new StatCard("Low stock items", "inventory",

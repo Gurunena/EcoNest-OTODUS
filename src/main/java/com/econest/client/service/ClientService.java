@@ -62,6 +62,11 @@ public class ClientService {
         return dao.findById(clientId);
     }
 
+    /** How many clients there are (shown on the Dashboard). */
+    public int countClients() throws SQLException {
+        return dao.countAll();
+    }
+
     /** Search by name, email, phone, city or contact person. Blank shows everyone. */
     public List<Client> search(String keyword) throws SQLException {
         if (Validator.isBlank(keyword)) {
