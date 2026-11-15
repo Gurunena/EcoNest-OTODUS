@@ -76,6 +76,11 @@ public class FakeClientDao implements ClientDao {
     }
 
     @Override
+    public int countAll() {
+        return clients.size();
+    }
+
+    @Override
     public int countOrders(int clientId) {
         return orderCounts.getOrDefault(clientId, 0);
     }

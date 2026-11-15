@@ -183,6 +183,17 @@ class ClientServiceTest {
         assertTrue(service.findAll().isEmpty());
     }
 
+    // ----------------------------------------------------------------- counting
+
+    @Test
+    void countClientsCountsEveryone() throws SQLException {
+        assertEquals(0, service.countClients());
+        service.addClient(household("Amara Silva", "amara@gmail.com", "0712345678"));
+        service.addClient(office("Rashmi Gunawardena"));
+
+        assertEquals(2, service.countClients());
+    }
+
     // ----------------------------------------------------------------- searching
 
     @Test

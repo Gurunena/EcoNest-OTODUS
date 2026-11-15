@@ -71,6 +71,9 @@ public class ClientDaoImpl implements ClientDao {
     private static final String SQL_COUNT_ORDERS =
             "SELECT COUNT(*) FROM orders WHERE client_id = ?";
 
+    private static final String SQL_COUNT_ALL =
+            "SELECT COUNT(*) FROM clients";
+
     // -----------------------------------------------------------------
     // Reading
     // -----------------------------------------------------------------
@@ -142,6 +145,16 @@ public class ClientDaoImpl implements ClientDao {
                 rs.next();
                 return rs.getInt(1);
             }
+        }
+    }
+
+    @Override
+    public int countAll() throws SQLException {
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_COUNT_ALL);
+             ResultSet rs = ps.executeQuery()) {
+            rs.next();
+            return rs.getInt(1);
         }
     }
 
