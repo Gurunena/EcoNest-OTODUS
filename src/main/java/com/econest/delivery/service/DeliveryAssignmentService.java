@@ -1,106 +1,101 @@
-
 package com.econest.delivery.service;
 
-import com.econest.agent.dao.DeliveryAgentDao;
-import com.econest.agent.model.DeliveryAgent;
 import com.econest.delivery.dao.DeliveryAssignmentDao;
 import com.econest.delivery.dao.DeliveryAssignmentDaoImpl;
 import com.econest.delivery.model.AvailableAgent;
 import com.econest.delivery.model.DeliveryAssignment;
 import com.econest.delivery.model.PendingOrder;
+import com.econest.notification.service.ClientNotificationService;
 import com.econest.notification.service.NotificationService;
 
 import java.sql.SQLException;
 import java.util.List;
 
+/**
+ * Business logic for the Delivery Assignment module.
+ *
+ * <p>Checks the things the screen must not be trusted with - that an order
+ * and an agent were actually chosen, and that an order is not assigned twice
+ * - then hands off to {@link DeliveryAssignmentDao}, which does the
+ * multi-table work in a transaction.</p>
+ *
+ * <p>Validation failures are {@link IllegalArgumentException} with messages
+ * written to be shown to the user unchanged.</p>
+ */
 public class DeliveryAssignmentService {
 
     private final DeliveryAssignmentDao dao;
-    private final DeliveryAgentDao agentDao;
-    private final NotificationService notificationService;
 
-    /** Production constructor. */
+    /** Production constructor: talks to MySQL. */
     public DeliveryAssignmentService() {
-        this(new DeliveryAssignmentDaoImpl(), new DeliveryAgentDao());
+        this(new DeliveryAssignmentDaoImpl());
     }
 
-    /** Injectable constructor for existing tests. */
+    /** Injectable constructor, so a test can pass a fake DAO. */
     public DeliveryAssignmentService(DeliveryAssignmentDao dao) {
-        this(dao, new DeliveryAgentDao());
-    }
-
-    public DeliveryAssignmentService(
-            DeliveryAssignmentDao dao,
-            DeliveryAgentDao agentDao) {
         this.dao = dao;
-        this.agentDao = agentDao;
-        this.notificationService = new NotificationService();
     }
 
+    // -----------------------------------------------------------------
     // Reads
+    // -----------------------------------------------------------------
 
+    /** Orders waiting for an agent. */
     public List<PendingOrder> findUnassignedOrders() throws SQLException {
         return dao.findUnassignedOrders();
     }
 
+    /** Agents free to take a delivery right now. */
     public List<AvailableAgent> findAvailableAgents() throws SQLException {
         return dao.findAvailableAgents();
     }
 
+    /** Every assignment, newest first. */
     public List<DeliveryAssignment> findAllAssignments() throws SQLException {
         return dao.findAllAssignments();
     }
 
+    // -----------------------------------------------------------------
     // Writes
+    // -----------------------------------------------------------------
 
+    /**
+     * Assigns an order to an agent. The order moves to the dispatched status
+     * and the agent is marked busy.
+     *
+     * <p>Then the client and the agent are emailed. Neither email call ever
+     * throws, so a problem with email can't undo the assignment.</p>
+     */
     public void assign(int orderId, int agentId) throws SQLException {
         requireOrder(orderId);
         requireAgent(agentId);
-
         dao.assign(orderId, agentId);
 
-        // Task 9: notify the newly assigned delivery agent.
-        notifyAgent(orderId, agentId);
+        // Task 8: tell the client their order is on its way
+        System.out.println(new ClientNotificationService().notifyOrderDispatched(orderId));
+        // Task 9: tell the agent about their new delivery
+        System.out.println(new NotificationService().notifyDeliveryAgent(orderId, agentId));
     }
 
+    /** Moves an order to a different agent, freeing the previous one. */
     public void reassign(int orderId, int newAgentId) throws SQLException {
         requireOrder(orderId);
         requireAgent(newAgentId);
-
         dao.reassign(orderId, newAgentId);
 
-        // Notify the new agent after reassignment succeeds.
-        notifyAgent(orderId, newAgentId);
+        // Task 9: tell the new agent about their new delivery
+        System.out.println(new NotificationService().notifyDeliveryAgent(orderId, newAgentId));
     }
 
+    /** Takes the agent off an order and puts the order back in the queue. */
     public void unassign(int orderId) throws SQLException {
         requireOrder(orderId);
         dao.unassign(orderId);
     }
 
-    // Task 9 email notification
-
-
-    private void notifyAgent(int orderId, int agentId) {
-        try {
-            String details = "Order ID: " + orderId
-                    + "\nDelivery Agent ID: " + agentId;
-
-            notificationService.notifyDeliveryAgent(
-                    agentId, details
-            );
-
-        } catch (Exception ex) {
-            // Do not undo an assignment if email sending fails.
-            System.err.println(
-                    "Assignment saved, but notification failed: "
-                            + ex.getMessage()
-            );
-        }
-    }
-
-
+    // -----------------------------------------------------------------
     // Validation
+    // -----------------------------------------------------------------
 
     private static void requireOrder(int orderId) {
         if (orderId <= 0) {
@@ -112,8 +107,7 @@ public class DeliveryAssignmentService {
         if (agentId <= 0) {
             throw new IllegalArgumentException(
                     "Choose a delivery agent. If the list is empty, every agent is "
-                            + "currently busy."
-            );
+                            + "currently busy.");
         }
     }
 }
