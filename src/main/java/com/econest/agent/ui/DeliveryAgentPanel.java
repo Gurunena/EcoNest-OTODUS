@@ -1,4 +1,3 @@
-
 package com.econest.agent.ui;
 
 import com.econest.agent.model.AgentStatus;
@@ -7,340 +6,352 @@ import com.econest.agent.model.Vehicle;
 import com.econest.agent.model.VehicleType;
 import com.econest.agent.service.DeliveryAgentService;
 import com.econest.ui.BaseModulePanel;
+import com.econest.ui.Theme;
+import com.econest.ui.components.Dialogs;
+import com.econest.ui.components.FormFields;
+import com.econest.ui.components.InputValidator;
+import com.econest.ui.components.TableStyler;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.Box;
+import javax.swing.JComboBox;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
+import javax.swing.SwingWorker;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 /**
- * Task 4: Manage delivery agents and vehicles.
+ * Task 4 screen: add, update, remove and search delivery agents and their
+ * vehicles.
+ *
+ * Built on the shared BaseModulePanel so it looks like every other screen:
+ * the agent list on the left, the selected agent's details on the right.
+ * Database calls run on a SwingWorker so the window never freezes.
  */
 public class DeliveryAgentPanel extends BaseModulePanel {
 
-    private final DeliveryAgentService service =
-            new DeliveryAgentService();
+    private static final String[] COLUMNS = {"ID", "Name", "Phone", "Vehicle", "Type", "Status"};
+    private static final int COL_STATUS = 5;
 
-    private final JTextField txtId = new JTextField();
-    private final JTextField txtName = new JTextField();
-    private final JTextField txtNic = new JTextField();
-    private final JTextField txtPhone = new JTextField();
-    private final JTextField txtEmail = new JTextField();
-    private final JTextField txtVehicleReg = new JTextField();
+    // --- form fields ------------------------------------------------------
+    private JTextField txtName;
+    private JTextField txtNic;
+    private JTextField txtPhone;
+    private JTextField txtEmail;
+    private JComboBox<AgentStatus> cmbStatus;
+    private JTextField txtVehicleReg;
+    private JComboBox<VehicleType> cmbVehicleType;
+    private JTextField txtMaxLoad;
 
-    private final JComboBox<VehicleType> cmbVehicleType =
-            new JComboBox<>(VehicleType.values());
+    private final DeliveryAgentService service = new DeliveryAgentService();
+    private final InputValidator validator = new InputValidator();
 
-    private final JSpinner spnMaxLoad =
-            new JSpinner(new SpinnerNumberModel(100, 1, 20000, 10));
+    /** The agents currently shown in the table, so a selected row can be turned back into an agent. */
+    private final List<DeliveryAgent> rows = new ArrayList<>();
 
-    private final JComboBox<AgentStatus> cmbStatus =
-            new JComboBox<>(AgentStatus.values());
+    /** True until the first load finishes, so a missing database doesn't pop up a dialog at start-up. */
+    private boolean initialLoad = true;
 
     public DeliveryAgentPanel() {
+        super("Delivery Agents", COLUMNS);
 
-        super("Delivery Agent Management",
-                new String[]{
-                        "ID", "Name", "NIC", "Phone", "Email",
-                        "Vehicle Reg.", "Vehicle Type",
-                        "Max Load (kg)", "Status"
-                });
-
-        txtId.setEditable(false);
-        txtId.setToolTipText("Assigned automatically");
-
-        tblData.setAutoCreateRowSorter(true);
+        setEmptyState("No delivery agents found", "Try a different search, or add an agent with the form.");
+        btnAdd.setText("Add agent");
+        TableStyler.colourStatusColumn(tblData, COL_STATUS);
 
         tblData.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                showSelectedRow();
+                showSelectedAgent();
             }
         });
 
-        initPanel();
+        initPanel();   // must be the last line (see UI_GUIDE.md)
     }
+
+    // =====================================================================
+    // The form
+    // =====================================================================
 
     @Override
     protected void buildForm(JPanel form) {
+        txtName = FormFields.textField("e.g. Kasun Rathnayake");
+        txtNic = FormFields.textField("e.g. 199012345678");
+        txtPhone = FormFields.textField("e.g. 0714567890");
+        txtEmail = FormFields.textField("e.g. kasun@econest.lk");
+        cmbStatus = FormFields.comboBox(AgentStatus.values());
+        txtVehicleReg = FormFields.textField("e.g. WP-CAB-1234");
+        cmbVehicleType = FormFields.comboBox(VehicleType.values());
+        txtMaxLoad = FormFields.textField("e.g. 300");
 
-        addField(form, "Agent ID (auto):", txtId);
-        addField(form, "Full Name:", txtName);
-        addField(form, "NIC:", txtNic);
-        addField(form, "Phone:", txtPhone);
-        addField(form, "Email:", txtEmail);
-        addField(form, "Status:", cmbStatus);
-        addField(form, "Vehicle Registration:", txtVehicleReg);
-        addField(form, "Vehicle Type:", cmbVehicleType);
-        addField(form, "Max Load (kg):", spnMaxLoad);
+        form.add(FormFields.heading("Agent details"));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+        form.add(FormFields.row("Full name", txtName));
+        form.add(FormFields.row("NIC", txtNic));
+        form.add(FormFields.row("Phone", txtPhone));
+        form.add(FormFields.row("Email", txtEmail));
+        form.add(FormFields.row("Status", cmbStatus));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+
+        form.add(FormFields.heading("Vehicle"));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+        form.add(FormFields.row("Registration no.", txtVehicleReg));
+        form.add(FormFields.row("Vehicle type", cmbVehicleType));
+        form.add(FormFields.row("Max load (kg)", txtMaxLoad));
     }
 
-    private void addField(JPanel form, String label,
-                          Component component) {
-
-        JLabel lbl = new JLabel(label);
-        lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        component.setMaximumSize(
-                new Dimension(Integer.MAX_VALUE, 65));
-
-        component.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        form.add(lbl);
-        form.add(Box.createVerticalStrut(5));
-        form.add(component);
-        form.add(Box.createVerticalStrut(10));
-    }
+    // =====================================================================
+    // Loading the table
+    // =====================================================================
 
     @Override
     protected void loadTableData() {
-        loadAgents(null);
-    }
-
-    @Override
-    protected void onAdd() {
-
-        try {
-            DeliveryAgent agent = readForm(0);
-
-            service.addAgent(agent);
-
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Agent added successfully. ID: "
-                            + agent.getAgentId()
-            );
-
-            onClear();
-            loadTableData();
-
-        } catch (IllegalArgumentException ex) {
-            showWarning(ex.getMessage());
-
-        } catch (SQLException ex) {
-            showError("Could not add the agent.", ex);
-        }
-    }
-
-    @Override
-    protected void onUpdate() {
-
-        Object idValue = selectedValue(0);
-
-        if (idValue == null) {
-            showWarning("Select an agent in the table first.");
-            return;
-        }
-
-        try {
-            int id = Integer.parseInt(idValue.toString());
-
-            DeliveryAgent agent = readForm(id);
-
-            if (service.updateAgent(agent)) {
-
-                JOptionPane.showMessageDialog(
-                        this,
-                        "Agent updated successfully."
-                );
-
-                onClear();
-                loadTableData();
-
-            } else {
-                showWarning("Agent not found.");
-            }
-
-        } catch (IllegalArgumentException ex) {
-            showWarning(ex.getMessage());
-
-        } catch (SQLException ex) {
-            showError("Could not update the agent.", ex);
-        }
-    }
-
-    @Override
-    protected void onDelete() {
-
-        Object idValue = selectedValue(0);
-
-        if (idValue == null) {
-            showWarning("Select an agent first.");
-            return;
-        }
-
-        try {
-            int id = Integer.parseInt(idValue.toString());
-
-            if (service.deleteAgent(id)) {
-
-                JOptionPane.showMessageDialog(
-                        this,
-                        "Agent deleted successfully."
-                );
-
-                onClear();
-                loadTableData();
-
-            } else {
-                showWarning("Agent not found.");
-            }
-
-        } catch (SQLException ex) {
-            showError(
-                    "Could not delete the agent. They may have delivery assignments.",
-                    ex
-            );
-        }
-    }
-
-    @Override
-    protected void onClear() {
-
-        txtId.setText("");
-        txtName.setText("");
-        txtNic.setText("");
-        txtPhone.setText("");
-        txtEmail.setText("");
-        txtVehicleReg.setText("");
-
-        cmbVehicleType.setSelectedIndex(0);
-        cmbStatus.setSelectedItem(AgentStatus.AVAILABLE);
-        spnMaxLoad.setValue(100);
-
-        tblData.clearSelection();
-
-        setStatus("Delivery agent form cleared.");
+        loadAgents(txtSearch.getText().trim());
     }
 
     @Override
     protected void onSearch(String query) {
-        loadAgents(query.isBlank() ? null : query);
+        loadAgents(query);
     }
 
-    private void loadAgents(String keyword) {
-
-        try {
-            List<DeliveryAgent> agents =
-                    service.search(keyword);
-
-            Object[][] rows = new Object[agents.size()][9];
-
-            for (int i = 0; i < agents.size(); i++) {
-
-                DeliveryAgent a = agents.get(i);
-                Vehicle v = a.getVehicle();
-
-                rows[i] = new Object[]{
-                        a.getAgentId(),
-                        a.getName(),
-                        a.getNic(),
-                        a.getPhone(),
-                        a.getEmail(),
-                        v == null ? "" : v.getRegistrationNumber(),
-                        v == null ? "" : v.getType().getLabel(),
-                        v == null ? "" : v.getMaxLoadKg(),
-                        a.getStatus().getLabel()
-                };
+    private void loadAgents(String query) {
+        new SwingWorker<List<DeliveryAgent>, Void>() {
+            @Override
+            protected List<DeliveryAgent> doInBackground() throws Exception {
+                return service.search(query);
             }
 
-            setRows(rows);
+            @Override
+            protected void done() {
+                boolean quiet = initialLoad;
+                initialLoad = false;
+                try {
+                    showRows(get(), query);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    if (quiet) {
+                        setStatus("Could not load delivery agents. Check db.properties and that MySQL is running.");
+                        System.err.println("DeliveryAgentPanel: could not load agents - " + ex.getCause());
+                    } else {
+                        fail("load the delivery agents", ex.getCause());
+                    }
+                }
+            }
+        }.execute();
+    }
 
-        } catch (SQLException ex) {
-            showError("Could not load delivery agents.", ex);
+    private void showRows(List<DeliveryAgent> agents, String query) {
+        rows.clear();
+        rows.addAll(agents);
+
+        Object[][] data = new Object[agents.size()][];
+        for (int i = 0; i < agents.size(); i++) {
+            DeliveryAgent a = agents.get(i);
+            Vehicle v = a.getVehicle();
+            data[i] = new Object[]{
+                    a.getAgentId(),
+                    a.getName(),
+                    a.getPhone(),
+                    v == null ? "-" : v.getRegistrationNumber(),
+                    v == null || v.getType() == null ? "-" : v.getType().getLabel(),
+                    a.getStatus() == null ? "-" : a.getStatus().getLabel()
+            };
         }
+        setRows(data);
+        setStatus(query.isEmpty()
+                ? agents.size() + " delivery agent(s)."
+                : agents.size() + " agent(s) match \"" + query + "\".");
     }
 
-    private DeliveryAgent readForm(int id) {
+    // =====================================================================
+    // Buttons
+    // =====================================================================
 
-        Vehicle vehicle = new Vehicle(
-                txtVehicleReg.getText().trim().toUpperCase(),
-                (VehicleType) cmbVehicleType.getSelectedItem(),
-                (Integer) spnMaxLoad.getValue()
-        );
-
-        return new DeliveryAgent(
-                id,
-                txtName.getText().trim(),
-                txtNic.getText().trim(),
-                txtPhone.getText().trim(),
-                txtEmail.getText().trim(),
-                vehicle,
-                (AgentStatus) cmbStatus.getSelectedItem()
-        );
+    @Override
+    protected void onAdd() {
+        DeliveryAgent agent = readForm(0);
+        if (agent == null) {
+            return;   // the problems are already shown next to the fields
+        }
+        runWrite("add the agent", () -> service.addAgent(agent), () -> {
+            setStatus("Added " + agent.getName() + " as agent #" + agent.getAgentId() + ".");
+            clearForm();
+        });
     }
 
-    private void showSelectedRow() {
-
-        int row = selectedModelRow();
-
-        if (row < 0) {
+    @Override
+    protected void onUpdate() {
+        DeliveryAgent selected = selectedAgent();
+        if (selected == null) {
+            Dialogs.error(this, "Select the agent you want to update in the table first.");
             return;
         }
-
-        txtId.setText(
-                String.valueOf(tableModel.getValueAt(row, 0))
-        );
-
-        txtName.setText(
-                String.valueOf(tableModel.getValueAt(row, 1))
-        );
-
-        txtNic.setText(
-                String.valueOf(tableModel.getValueAt(row, 2))
-        );
-
-        txtPhone.setText(
-                String.valueOf(tableModel.getValueAt(row, 3))
-        );
-
-        Object email = tableModel.getValueAt(row, 4);
-        txtEmail.setText(email == null ? "" : email.toString());
-
-        txtVehicleReg.setText(
-                String.valueOf(tableModel.getValueAt(row, 5))
-        );
-
-        String type =
-                String.valueOf(tableModel.getValueAt(row, 6));
-
-        if (!type.isEmpty()) {
-            cmbVehicleType.setSelectedItem(
-                    VehicleType.fromLabel(type)
-            );
+        DeliveryAgent agent = readForm(selected.getAgentId());
+        if (agent == null) {
+            return;
         }
-
-        Object load = tableModel.getValueAt(row, 7);
-
-        if (load instanceof Number) {
-            spnMaxLoad.setValue(((Number) load).intValue());
-        }
-
-        cmbStatus.setSelectedItem(
-                AgentStatus.fromLabel(
-                        String.valueOf(tableModel.getValueAt(row, 8))
-                )
-        );
+        runWrite("update the agent", () -> {
+            if (!service.updateAgent(agent)) {
+                throw new IllegalArgumentException("This agent no longer exists. They may have been deleted.");
+            }
+        }, () -> setStatus("Updated agent #" + agent.getAgentId() + "."));
     }
 
-    private void showWarning(String message) {
-
-        JOptionPane.showMessageDialog(
-                this,
-                message,
-                "Check your input",
-                JOptionPane.WARNING_MESSAGE
-        );
+    @Override
+    protected void onDelete() {
+        // BaseModulePanel has already asked "are you sure?"
+        DeliveryAgent selected = selectedAgent();
+        if (selected == null) {
+            return;
+        }
+        runWrite("delete the agent", () -> service.deleteAgent(selected.getAgentId()), () -> {
+            setStatus("Deleted " + selected.getName() + " and their vehicle.");
+            clearForm();
+        });
     }
 
-    private void showError(String message, SQLException ex) {
+    @Override
+    protected void onClear() {
+        clearForm();
+        super.onClear();   // also clears the search box and the table selection
+    }
 
-        ex.printStackTrace();
+    // =====================================================================
+    // Form <-> DeliveryAgent
+    // =====================================================================
 
-        JOptionPane.showMessageDialog(
-                this,
-                message + "\n" + ex.getMessage(),
-                "Database error",
-                JOptionPane.ERROR_MESSAGE
-        );
+    /**
+     * Checks the required fields (showing problems in red under them) and builds
+     * a DeliveryAgent. DeliveryAgentService.validate() then checks the NIC, phone
+     * and email formats. Returns null if something is wrong.
+     */
+    private DeliveryAgent readForm(int agentId) {
+        validator.reset();
+        String name = validator.required(txtName, "Full name");
+        String nic = validator.required(txtNic, "NIC");
+        String phone = validator.required(txtPhone, "Phone");
+        String email = validator.email(txtEmail, "Email");
+        String vehicleReg = validator.required(txtVehicleReg, "Registration no.");
+        Integer maxLoad = validator.integer(txtMaxLoad, "Max load");
+        if (!validator.isValid()) {
+            return null;
+        }
+        Vehicle vehicle = new Vehicle(vehicleReg.toUpperCase(),
+                (VehicleType) cmbVehicleType.getSelectedItem(), maxLoad);
+        return new DeliveryAgent(agentId, name, nic, phone.replaceAll("[\\s-]", ""), email, vehicle,
+                (AgentStatus) cmbStatus.getSelectedItem());
+    }
+
+    private DeliveryAgent selectedAgent() {
+        int row = selectedModelRow();
+        return row < 0 || row >= rows.size() ? null : rows.get(row);
+    }
+
+    private void showSelectedAgent() {
+        DeliveryAgent a = selectedAgent();
+        if (a == null) {
+            return;
+        }
+        clearErrors();
+        txtName.setText(a.getName());
+        txtNic.setText(a.getNic() == null ? "" : a.getNic());
+        txtPhone.setText(a.getPhone());
+        txtEmail.setText(a.getEmail() == null ? "" : a.getEmail());
+        if (a.getStatus() != null) {
+            cmbStatus.setSelectedItem(a.getStatus());
+        }
+        Vehicle v = a.getVehicle();
+        txtVehicleReg.setText(v == null ? "" : v.getRegistrationNumber());
+        if (v != null && v.getType() != null) {
+            cmbVehicleType.setSelectedItem(v.getType());
+        }
+        txtMaxLoad.setText(v == null ? "" : String.valueOf(v.getMaxLoadKg()));
+    }
+
+    private void clearForm() {
+        tblData.clearSelection();
+        clearErrors();
+        txtName.setText("");
+        txtNic.setText("");
+        txtPhone.setText("");
+        txtEmail.setText("");
+        cmbStatus.setSelectedIndex(0);
+        txtVehicleReg.setText("");
+        cmbVehicleType.setSelectedIndex(0);
+        txtMaxLoad.setText("");
+    }
+
+    private void clearErrors() {
+        for (JTextField field : new JTextField[]{txtName, txtNic, txtPhone, txtEmail, txtVehicleReg, txtMaxLoad}) {
+            validator.clear(field);
+        }
+    }
+
+    // =====================================================================
+    // Talking to the database
+    // =====================================================================
+
+    /** Something that talks to the database. */
+    @FunctionalInterface
+    private interface DbCall {
+        void run() throws SQLException;
+    }
+
+    /** Runs a save/delete on a background thread, then reloads the table. */
+    private void runWrite(String action, DbCall call, Runnable onSuccess) {
+        setBusy(true);
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                call.run();
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                setBusy(false);
+                try {
+                    get();
+                    onSuccess.run();
+                    loadAgents(txtSearch.getText().trim());
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    fail(action, ex.getCause());
+                }
+            }
+        }.execute();
+    }
+
+    /** Shows a problem to the user in plain words. */
+    private void fail(String action, Throwable cause) {
+        if (cause instanceof IllegalArgumentException) {
+            Dialogs.error(this, cause.getMessage());
+            setStatus("Nothing changed.");
+            return;
+        }
+        if (cause instanceof SQLIntegrityConstraintViolationException) {
+            Dialogs.error(this, action.startsWith("delete")
+                    ? "This agent has deliveries on record, so they can't be deleted. Set them to Off duty instead."
+                    : "Another agent already has this licence/NIC or vehicle registration number.");
+            setStatus("Nothing changed.");
+            return;
+        }
+        System.err.println("DeliveryAgentPanel: could not " + action);
+        if (cause != null) {
+            cause.printStackTrace();
+        }
+        String detail = (cause == null || cause.getMessage() == null) ? "Unknown error." : cause.getMessage();
+        Dialogs.error(this, "Could not " + action + ".\n\n" + detail);
+        setStatus("Delivery agent operation failed.");
+    }
+
+    private void setBusy(boolean busy) {
+        btnAdd.setEnabled(!busy);
+        btnUpdate.setEnabled(!busy);
+        btnDelete.setEnabled(!busy);
     }
 }

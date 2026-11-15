@@ -75,7 +75,7 @@ public class DashboardPanel extends JPanel {
      * the lists underneath need the space back. Still comfortably clears the
      * icon circle, the figure and the label plus the card's own padding.
      */
-    private static final int CARD_HEIGHT = 140;
+    private static final int CARD_HEIGHT = 160;
 
     private static final DateTimeFormatter WHEN =
             DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);

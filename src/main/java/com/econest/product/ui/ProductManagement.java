@@ -1,354 +1,358 @@
+package com.econest.product.ui;
 
-package com.econest.agent.ui;
-
-import com.econest.agent.model.AgentStatus;
-import com.econest.agent.model.DeliveryAgent;
-import com.econest.agent.model.Vehicle;
-import com.econest.agent.model.VehicleType;
-import com.econest.agent.service.DeliveryAgentService;
+import com.econest.product.model.Product;
+import com.econest.product.service.ProductService;
 import com.econest.ui.BaseModulePanel;
+import com.econest.ui.Theme;
+import com.econest.ui.components.Dialogs;
+import com.econest.ui.components.FormFields;
+import com.econest.ui.components.InputValidator;
+import com.econest.ui.components.TableStyler;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.Box;
+import javax.swing.JComboBox;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
+import javax.swing.SwingWorker;
 import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutionException;
 
 /**
- * Task 4: Manage delivery agents and vehicles.
+ * Task 1 screen: add, update, remove and search plants, planters and
+ * gardening kits.
+ *
+ * Built on the shared BaseModulePanel so it looks like every other screen:
+ * the product list on the left, the selected product's details on the right.
+ * Database calls run on a SwingWorker so the window never freezes.
  */
-public class DeliveryAgentPanel extends BaseModulePanel {
+public class ProductManagement extends BaseModulePanel {
 
-    private final DeliveryAgentService service =
-            new DeliveryAgentService();
+    private static final String[] COLUMNS = {"ID", "Name", "Category", "Price", "Eco rating", "In stock"};
+    private static final int COL_PRICE = 3;
+    private static final int COL_ECO = 4;
+    private static final int COL_STOCK = 5;
 
-    private final JTextField txtId = new JTextField();
-    private final JTextField txtName = new JTextField();
-    private final JTextField txtNic = new JTextField();
-    private final JTextField txtPhone = new JTextField();
-    private final JTextField txtEmail = new JTextField();
-    private final JTextField txtVehicleReg = new JTextField();
+    /** What the user sees in the Category box, in the same order as ProductService.CATEGORIES. */
+    private static final String[] CATEGORY_LABELS = {"Plant", "Planter", "Gardening kit"};
 
-    private final JComboBox<VehicleType> cmbVehicleType =
-            new JComboBox<>(VehicleType.values());
+    /** What the user sees in the Eco rating box; the rating is the position + 1. */
+    private static final String[] ECO_LABELS = {
+            "1 - Low", "2 - Fair", "3 - Good", "4 - Very good", "5 - Excellent"};
 
-    private final JSpinner spnMaxLoad =
-            new JSpinner(
-                    new SpinnerNumberModel(100, 1, 20000, 10)
-            );
+    // --- form fields ------------------------------------------------------
+    private JTextField txtName;
+    private JComboBox<String> cmbCategory;
+    private JTextField txtPrice;
+    private JComboBox<String> cmbEcoRating;
+    private JTextField txtQuantity;
+    private JTextField txtDescription;
 
-    private final JComboBox<AgentStatus> cmbStatus =
-            new JComboBox<>(AgentStatus.values());
+    private final ProductService service = new ProductService();
+    private final InputValidator validator = new InputValidator();
 
-    public DeliveryAgentPanel() {
+    /** The products currently shown in the table, so a selected row can be turned back into a Product. */
+    private final List<Product> rows = new ArrayList<>();
 
-        super("Delivery Agent Management",
-                new String[]{
-                        "ID", "Name", "NIC", "Phone", "Email",
-                        "Vehicle Reg.", "Vehicle Type",
-                        "Max Load (kg)", "Status"
-                });
+    /** True until the first load finishes, so a missing database doesn't pop up a dialog at start-up. */
+    private boolean initialLoad = true;
 
-        txtId.setEditable(false);
-        txtId.setToolTipText("Assigned automatically");
+    public ProductManagement() {
+        super("Products", COLUMNS);
 
-        tblData.setAutoCreateRowSorter(true);
+        setEmptyState("No products found", "Try a different search, or add a product with the form.");
+        btnAdd.setText("Add product");
+        TableStyler.rightAlign(tblData, COL_PRICE, COL_ECO, COL_STOCK);
 
         tblData.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                showSelectedRow();
+                showSelectedProduct();
             }
         });
 
-        initPanel();
+        initPanel();   // must be the last line (see UI_GUIDE.md)
     }
+
+    // =====================================================================
+    // The form
+    // =====================================================================
 
     @Override
     protected void buildForm(JPanel form) {
+        txtName = FormFields.textField("e.g. Peace Lily");
+        cmbCategory = FormFields.comboBox(CATEGORY_LABELS);
+        txtPrice = FormFields.textField("e.g. 1850.00");
+        cmbEcoRating = FormFields.comboBox(ECO_LABELS);
+        txtQuantity = FormFields.textField("e.g. 25");
+        txtDescription = FormFields.textField("e.g. Air-purifying indoor plant");
 
-        addField(form, "Agent ID (auto):", txtId);
-        addField(form, "Full Name:", txtName);
-        addField(form, "NIC:", txtNic);
-        addField(form, "Phone:", txtPhone);
-        addField(form, "Email:", txtEmail);
-        addField(form, "Status:", cmbStatus);
-        addField(form, "Vehicle Registration:", txtVehicleReg);
-        addField(form, "Vehicle Type:", cmbVehicleType);
-        addField(form, "Max Load (kg):", spnMaxLoad);
+        cmbEcoRating.setSelectedIndex(2);   // 3 - Good, the database default
+
+        form.add(FormFields.heading("Product details"));
+        form.add(Box.createVerticalStrut(Theme.GAP_SMALL));
+        form.add(FormFields.row("Product name", txtName));
+        form.add(FormFields.row("Category", cmbCategory));
+        form.add(FormFields.row("Price (Rs.)", txtPrice));
+        form.add(FormFields.row("Eco rating", cmbEcoRating));
+        form.add(FormFields.row("Quantity in stock", txtQuantity));
+        form.add(FormFields.row("Description (optional)", txtDescription));
     }
 
-    private void addField(JPanel form, String label,
-                          JComponent component) {
-
-        JLabel lbl = new JLabel(label);
-        lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        component.setMaximumSize(
-                new Dimension(Integer.MAX_VALUE, 65)
-        );
-
-        component.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        form.add(lbl);
-        form.add(Box.createVerticalStrut(5));
-        form.add(component);
-        form.add(Box.createVerticalStrut(10));
-    }
+    // =====================================================================
+    // Loading the table
+    // =====================================================================
 
     @Override
     protected void loadTableData() {
-        loadAgents(null);
-    }
-
-    @Override
-    protected void onAdd() {
-
-        try {
-            DeliveryAgent agent = readForm(0);
-
-            service.addAgent(agent);
-
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Agent added successfully. ID: "
-                            + agent.getAgentId()
-            );
-
-            onClear();
-            loadTableData();
-
-        } catch (IllegalArgumentException ex) {
-            showWarning(ex.getMessage());
-
-        } catch (SQLException ex) {
-            showError("Could not add the agent.", ex);
-        }
-    }
-
-    @Override
-    protected void onUpdate() {
-
-        Object idValue = selectedValue(0);
-
-        if (idValue == null) {
-            showWarning("Select an agent in the table first.");
-            return;
-        }
-
-        try {
-            int id = Integer.parseInt(idValue.toString());
-
-            DeliveryAgent agent = readForm(id);
-
-            if (service.updateAgent(agent)) {
-
-                JOptionPane.showMessageDialog(
-                        this,
-                        "Agent updated successfully."
-                );
-
-                onClear();
-                loadTableData();
-
-            } else {
-                showWarning("Agent not found.");
-            }
-
-        } catch (IllegalArgumentException ex) {
-            showWarning(ex.getMessage());
-
-        } catch (SQLException ex) {
-            showError("Could not update the agent.", ex);
-        }
-    }
-
-    @Override
-    protected void onDelete() {
-
-        Object idValue = selectedValue(0);
-
-        if (idValue == null) {
-            showWarning("Select an agent first.");
-            return;
-        }
-
-        try {
-            int id = Integer.parseInt(idValue.toString());
-
-            if (service.deleteAgent(id)) {
-
-                JOptionPane.showMessageDialog(
-                        this,
-                        "Agent deleted successfully."
-                );
-
-                onClear();
-                loadTableData();
-
-            } else {
-                showWarning("Agent not found.");
-            }
-
-        } catch (SQLException ex) {
-            showError(
-                    "Could not delete the agent. They may have delivery assignments.",
-                    ex
-            );
-        }
-    }
-
-    @Override
-    protected void onClear() {
-
-        txtId.setText("");
-        txtName.setText("");
-        txtNic.setText("");
-        txtPhone.setText("");
-        txtEmail.setText("");
-        txtVehicleReg.setText("");
-
-        cmbVehicleType.setSelectedIndex(0);
-        cmbStatus.setSelectedItem(AgentStatus.AVAILABLE);
-        spnMaxLoad.setValue(100);
-
-        tblData.clearSelection();
-
-        setStatus("Delivery agent form cleared.");
+        loadProducts(txtSearch.getText().trim());
     }
 
     @Override
     protected void onSearch(String query) {
-        loadAgents(query.isBlank() ? null : query);
+        loadProducts(query);
     }
 
-    private void loadAgents(String keyword) {
-
-        try {
-            List<DeliveryAgent> agents =
-                    service.search(keyword);
-
-            Object[][] rows = new Object[agents.size()][9];
-
-            for (int i = 0; i < agents.size(); i++) {
-
-                DeliveryAgent a = agents.get(i);
-                Vehicle v = a.getVehicle();
-
-                rows[i] = new Object[]{
-                        a.getAgentId(),
-                        a.getName(),
-                        a.getNic(),
-                        a.getPhone(),
-                        a.getEmail(),
-                        v == null ? "" : v.getRegistrationNumber(),
-                        v == null ? "" : v.getType().getLabel(),
-                        v == null ? "" : v.getMaxLoadKg(),
-                        a.getStatus().getLabel()
-                };
+    private void loadProducts(String query) {
+        new SwingWorker<List<Product>, Void>() {
+            @Override
+            protected List<Product> doInBackground() throws Exception {
+                return service.search(query);
             }
 
-            setRows(rows);
+            @Override
+            protected void done() {
+                boolean quiet = initialLoad;
+                initialLoad = false;
+                try {
+                    showRows(get(), query);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    if (quiet) {
+                        setStatus("Could not load products. Check db.properties and that MySQL is running.");
+                        System.err.println("ProductManagement: could not load products - " + ex.getCause());
+                    } else {
+                        fail("load the products", ex.getCause());
+                    }
+                }
+            }
+        }.execute();
+    }
 
-        } catch (SQLException ex) {
-            showError("Could not load delivery agents.", ex);
+    private void showRows(List<Product> products, String query) {
+        rows.clear();
+        rows.addAll(products);
+
+        Object[][] data = new Object[products.size()][];
+        for (int i = 0; i < products.size(); i++) {
+            Product p = products.get(i);
+            data[i] = new Object[]{
+                    p.getProductId(),
+                    p.getProductName(),
+                    categoryLabel(p.getCategory()),
+                    rupees(p.getPrice()),
+                    p.getEcoRating() + " / 5",
+                    p.getQuantity()
+            };
         }
+        setRows(data);
+        setStatus(query.isEmpty()
+                ? products.size() + " product(s)."
+                : products.size() + " product(s) match \"" + query + "\".");
     }
 
-    private DeliveryAgent readForm(int id) {
+    // =====================================================================
+    // Buttons
+    // =====================================================================
 
-        Vehicle vehicle = new Vehicle(
-                txtVehicleReg.getText().trim().toUpperCase(),
-                (VehicleType) cmbVehicleType.getSelectedItem(),
-                (Integer) spnMaxLoad.getValue()
-        );
-
-        return new DeliveryAgent(
-                id,
-                txtName.getText().trim(),
-                txtNic.getText().trim(),
-                txtPhone.getText().trim(),
-                txtEmail.getText().trim(),
-                vehicle,
-                (AgentStatus) cmbStatus.getSelectedItem()
-        );
+    @Override
+    protected void onAdd() {
+        Product product = readForm(0);
+        if (product == null) {
+            return;   // the problems are already shown next to the fields
+        }
+        runWrite("add the product", () -> service.addProduct(product), () -> {
+            setStatus("Added " + product.getProductName() + " as product #" + product.getProductId() + ".");
+            clearForm();
+        });
     }
 
-    private void showSelectedRow() {
-
-        int row = selectedModelRow();
-
-        if (row < 0) {
+    @Override
+    protected void onUpdate() {
+        Product selected = selectedProduct();
+        if (selected == null) {
+            Dialogs.error(this, "Select the product you want to update in the table first.");
             return;
         }
-
-        txtId.setText(
-                String.valueOf(tableModel.getValueAt(row, 0))
-        );
-
-        txtName.setText(
-                String.valueOf(tableModel.getValueAt(row, 1))
-        );
-
-        txtNic.setText(
-                String.valueOf(tableModel.getValueAt(row, 2))
-        );
-
-        txtPhone.setText(
-                String.valueOf(tableModel.getValueAt(row, 3))
-        );
-
-        Object email = tableModel.getValueAt(row, 4);
-
-        txtEmail.setText(
-                email == null ? "" : email.toString()
-        );
-
-        txtVehicleReg.setText(
-                String.valueOf(tableModel.getValueAt(row, 5))
-        );
-
-        String type =
-                String.valueOf(tableModel.getValueAt(row, 6));
-
-        if (!type.isEmpty()) {
-            cmbVehicleType.setSelectedItem(
-                    VehicleType.fromLabel(type)
-            );
+        Product product = readForm(selected.getProductId());
+        if (product == null) {
+            return;
         }
-
-        Object load = tableModel.getValueAt(row, 7);
-
-        if (load instanceof Number) {
-            spnMaxLoad.setValue(
-                    ((Number) load).intValue()
-            );
-        }
-
-        cmbStatus.setSelectedItem(
-                AgentStatus.fromLabel(
-                        String.valueOf(tableModel.getValueAt(row, 8))
-                )
-        );
+        runWrite("update the product", () -> {
+            if (!service.updateProduct(product)) {
+                throw new IllegalArgumentException("This product no longer exists. It may have been deleted.");
+            }
+        }, () -> setStatus("Updated product #" + product.getProductId() + "."));
     }
 
-    private void showWarning(String message) {
-
-        JOptionPane.showMessageDialog(
-                this,
-                message,
-                "Check your input",
-                JOptionPane.WARNING_MESSAGE
-        );
+    @Override
+    protected void onDelete() {
+        // BaseModulePanel has already asked "are you sure?"
+        Product selected = selectedProduct();
+        if (selected == null) {
+            return;
+        }
+        runWrite("delete the product", () -> service.deleteProduct(selected.getProductId()), () -> {
+            setStatus("Deleted " + selected.getProductName() + ".");
+            clearForm();
+        });
     }
 
-    private void showError(String message, SQLException ex) {
+    @Override
+    protected void onClear() {
+        clearForm();
+        super.onClear();   // also clears the search box and the table selection
+    }
 
-        ex.printStackTrace();
+    // =====================================================================
+    // Form <-> Product
+    // =====================================================================
 
-        JOptionPane.showMessageDialog(
-                this,
-                message + "\n" + ex.getMessage(),
-                "Database error",
-                JOptionPane.ERROR_MESSAGE
-        );
+    /** Checks the fields (showing problems in red under them) and builds a Product. Null if something is wrong. */
+    private Product readForm(int productId) {
+        validator.reset();
+        String name = validator.required(txtName, "Product name");
+        Double price = validator.number(txtPrice, "Price");
+        Integer quantity = validator.integer(txtQuantity, "Quantity");
+        if (!validator.isValid()) {
+            return null;
+        }
+        return new Product(productId,
+                name,
+                ProductService.CATEGORIES[cmbCategory.getSelectedIndex()],
+                price,
+                cmbEcoRating.getSelectedIndex() + 1,
+                txtDescription.getText().trim(),
+                quantity);
+    }
+
+    private Product selectedProduct() {
+        int row = selectedModelRow();
+        return row < 0 || row >= rows.size() ? null : rows.get(row);
+    }
+
+    private void showSelectedProduct() {
+        Product p = selectedProduct();
+        if (p == null) {
+            return;
+        }
+        clearErrors();
+        txtName.setText(p.getProductName());
+        cmbCategory.setSelectedIndex(categoryIndex(p.getCategory()));
+        txtPrice.setText(String.format(Locale.ENGLISH, "%.2f", p.getPrice()));
+        cmbEcoRating.setSelectedIndex(Math.max(0, Math.min(4, p.getEcoRating() - 1)));
+        txtQuantity.setText(String.valueOf(p.getQuantity()));
+        txtDescription.setText(p.getDescription() == null ? "" : p.getDescription());
+    }
+
+    private void clearForm() {
+        tblData.clearSelection();
+        clearErrors();
+        txtName.setText("");
+        cmbCategory.setSelectedIndex(0);
+        txtPrice.setText("");
+        cmbEcoRating.setSelectedIndex(2);
+        txtQuantity.setText("");
+        txtDescription.setText("");
+    }
+
+    private void clearErrors() {
+        validator.clear(txtName);
+        validator.clear(txtPrice);
+        validator.clear(txtQuantity);
+    }
+
+    // =====================================================================
+    // Small helpers
+    // =====================================================================
+
+    private static int categoryIndex(String code) {
+        for (int i = 0; i < ProductService.CATEGORIES.length; i++) {
+            if (ProductService.CATEGORIES[i].equalsIgnoreCase(code)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private static String categoryLabel(String code) {
+        return CATEGORY_LABELS[categoryIndex(code)];
+    }
+
+    /** 1850 -> "Rs. 1,850.00" */
+    private static String rupees(double amount) {
+        return String.format(Locale.ENGLISH, "Rs. %,.2f", amount);
+    }
+
+    /** Something that talks to the database. */
+    @FunctionalInterface
+    private interface DbCall {
+        void run() throws SQLException;
+    }
+
+    /** Runs a save/delete on a background thread, then reloads the table. */
+    private void runWrite(String action, DbCall call, Runnable onSuccess) {
+        setBusy(true);
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                call.run();
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                setBusy(false);
+                try {
+                    get();
+                    onSuccess.run();
+                    loadProducts(txtSearch.getText().trim());
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    fail(action, ex.getCause());
+                }
+            }
+        }.execute();
+    }
+
+    /** Shows a problem to the user in plain words. */
+    private void fail(String action, Throwable cause) {
+        if (cause instanceof IllegalArgumentException) {
+            Dialogs.error(this, cause.getMessage());
+            setStatus("Nothing changed.");
+            return;
+        }
+        if (cause instanceof SQLIntegrityConstraintViolationException) {
+            Dialogs.error(this, "This product is used by an order or a stock record, so it can't be deleted.");
+            setStatus("Nothing changed.");
+            return;
+        }
+        System.err.println("ProductManagement: could not " + action);
+        if (cause != null) {
+            cause.printStackTrace();
+        }
+        String detail = (cause == null || cause.getMessage() == null) ? "Unknown error." : cause.getMessage();
+        Dialogs.error(this, "Could not " + action + ".\n\n" + detail);
+        setStatus("Product operation failed.");
+    }
+
+    private void setBusy(boolean busy) {
+        btnAdd.setEnabled(!busy);
+        btnUpdate.setEnabled(!busy);
+        btnDelete.setEnabled(!busy);
     }
 }
