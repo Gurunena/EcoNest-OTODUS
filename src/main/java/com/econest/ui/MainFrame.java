@@ -5,6 +5,7 @@ package com.econest.ui;
 import com.econest.client.ui.ClientPanel;
 import com.econest.delivery.ui.DeliveryAssignmentPanel;
 import com.econest.inventory.ui.InventoryPanel;
+import com.econest.notification.ui.NotificationPanel;
 import com.econest.order.ui.OrderPanel;
 import com.econest.report.ui.ReportPanel;
 
@@ -122,9 +123,8 @@ public class MainFrame extends JFrame {
         // Reports
         addPage(PAGE_REPORTS, new ReportPanel());
 
-        // Notifications
-        addPage(PAGE_NOTIFICATIONS,
-                new PlaceholderPanel(PAGE_NOTIFICATIONS, "Notifications owner"));
+        // Notifications module
+        addPage(PAGE_NOTIFICATIONS, new NotificationPanel());
     }
 
     // ADD PAGE

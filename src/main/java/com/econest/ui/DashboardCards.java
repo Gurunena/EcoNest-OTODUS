@@ -67,7 +67,7 @@ public final class DashboardCards {
                         Theme.TINT_INFO, Theme.STATUS_INFO, stats::revenueThisMonth),
 
                 // Notifications module
-                StatCard.placeholder("Notifications", "notifications",
-                        Theme.TINT_PENDING, Theme.STATUS_PENDING));
+                new StatCard("Emails sent", "notifications", Theme.TINT_PENDING, Theme.STATUS_PENDING,
+                        () -> String.valueOf(new com.econest.notification.dao.NotificationDaoImpl().countSent())));
     }
 }

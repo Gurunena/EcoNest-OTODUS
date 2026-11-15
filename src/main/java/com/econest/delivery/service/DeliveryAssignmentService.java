@@ -5,6 +5,8 @@ import com.econest.delivery.dao.DeliveryAssignmentDaoImpl;
 import com.econest.delivery.model.AvailableAgent;
 import com.econest.delivery.model.DeliveryAssignment;
 import com.econest.delivery.model.PendingOrder;
+import com.econest.notification.service.ClientNotificationService;
+import com.econest.notification.service.NotificationService;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -60,11 +62,19 @@ public class DeliveryAssignmentService {
     /**
      * Assigns an order to an agent. The order moves to the dispatched status
      * and the agent is marked busy.
+     *
+     * <p>Then the client and the agent are emailed. Neither email call ever
+     * throws, so a problem with email can't undo the assignment.</p>
      */
     public void assign(int orderId, int agentId) throws SQLException {
         requireOrder(orderId);
         requireAgent(agentId);
         dao.assign(orderId, agentId);
+
+        // Task 8: tell the client their order is on its way
+        System.out.println(new ClientNotificationService().notifyOrderDispatched(orderId));
+        // Task 9: tell the agent about their new delivery
+        System.out.println(new NotificationService().notifyDeliveryAgent(orderId, agentId));
     }
 
     /** Moves an order to a different agent, freeing the previous one. */
@@ -72,6 +82,9 @@ public class DeliveryAssignmentService {
         requireOrder(orderId);
         requireAgent(newAgentId);
         dao.reassign(orderId, newAgentId);
+
+        // Task 9: tell the new agent about their new delivery
+        System.out.println(new NotificationService().notifyDeliveryAgent(orderId, newAgentId));
     }
 
     /** Takes the agent off an order and puts the order back in the queue. */
