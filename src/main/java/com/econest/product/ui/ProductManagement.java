@@ -1,8 +1,11 @@
 
-package com.econest.product.ui;
+package com.econest.agent.ui;
 
-import com.econest.product.model.Product;
-import com.econest.product.service.ProductService;
+import com.econest.agent.model.AgentStatus;
+import com.econest.agent.model.DeliveryAgent;
+import com.econest.agent.model.Vehicle;
+import com.econest.agent.model.VehicleType;
+import com.econest.agent.service.DeliveryAgentService;
 import com.econest.ui.BaseModulePanel;
 
 import javax.swing.*;
@@ -11,35 +14,42 @@ import java.sql.SQLException;
 import java.util.List;
 
 /**
- * Task 1: Manage products.
+ * Task 4: Manage delivery agents and vehicles.
  */
-public class ProductManagement extends BaseModulePanel {
+public class DeliveryAgentPanel extends BaseModulePanel {
 
-    private final ProductService service = new ProductService();
+    private final DeliveryAgentService service =
+            new DeliveryAgentService();
 
     private final JTextField txtId = new JTextField();
     private final JTextField txtName = new JTextField();
-    private final JComboBox<String> cmbCategory =
-            new JComboBox<>(ProductService.CATEGORIES);
-    private final JTextField txtPrice = new JTextField();
-    private final JSpinner spnEcoRating =
-            new JSpinner(new SpinnerNumberModel(3, 1, 5, 1));
-    private final JTextArea txtDescription = new JTextArea(3, 20);
-    private final JSpinner spnQuantity =
-            new JSpinner(new SpinnerNumberModel(0, 0, 1_000_000, 1));
+    private final JTextField txtNic = new JTextField();
+    private final JTextField txtPhone = new JTextField();
+    private final JTextField txtEmail = new JTextField();
+    private final JTextField txtVehicleReg = new JTextField();
 
-    public ProductManagement() {
-        super("Product Management",
+    private final JComboBox<VehicleType> cmbVehicleType =
+            new JComboBox<>(VehicleType.values());
+
+    private final JSpinner spnMaxLoad =
+            new JSpinner(
+                    new SpinnerNumberModel(100, 1, 20000, 10)
+            );
+
+    private final JComboBox<AgentStatus> cmbStatus =
+            new JComboBox<>(AgentStatus.values());
+
+    public DeliveryAgentPanel() {
+
+        super("Delivery Agent Management",
                 new String[]{
-                        "ID", "Name", "Category", "Price (Rs.)",
-                        "Eco Rating", "Description", "Quantity"
+                        "ID", "Name", "NIC", "Phone", "Email",
+                        "Vehicle Reg.", "Vehicle Type",
+                        "Max Load (kg)", "Status"
                 });
 
         txtId.setEditable(false);
         txtId.setToolTipText("Assigned automatically");
-
-        txtDescription.setLineWrap(true);
-        txtDescription.setWrapStyleWord(true);
 
         tblData.setAutoCreateRowSorter(true);
 
@@ -55,20 +65,27 @@ public class ProductManagement extends BaseModulePanel {
     @Override
     protected void buildForm(JPanel form) {
 
-        addField(form, "Product ID (auto):", txtId);
-        addField(form, "Product Name:", txtName);
-        addField(form, "Category:", cmbCategory);
-        addField(form, "Price (Rs.):", txtPrice);
-        addField(form, "Eco Rating (1-5):", spnEcoRating);
-        addField(form, "Description:", new JScrollPane(txtDescription));
-        addField(form, "Quantity:", spnQuantity);
+        addField(form, "Agent ID (auto):", txtId);
+        addField(form, "Full Name:", txtName);
+        addField(form, "NIC:", txtNic);
+        addField(form, "Phone:", txtPhone);
+        addField(form, "Email:", txtEmail);
+        addField(form, "Status:", cmbStatus);
+        addField(form, "Vehicle Registration:", txtVehicleReg);
+        addField(form, "Vehicle Type:", cmbVehicleType);
+        addField(form, "Max Load (kg):", spnMaxLoad);
     }
 
-    private void addField(JPanel form, String label, Component component) {
+    private void addField(JPanel form, String label,
+                          JComponent component) {
+
         JLabel lbl = new JLabel(label);
         lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+
         component.setMaximumSize(
-                new Dimension(Integer.MAX_VALUE, 65));
+                new Dimension(Integer.MAX_VALUE, 65)
+        );
+
         component.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         form.add(lbl);
@@ -79,20 +96,21 @@ public class ProductManagement extends BaseModulePanel {
 
     @Override
     protected void loadTableData() {
-        loadProducts(null);
+        loadAgents(null);
     }
 
     @Override
     protected void onAdd() {
-        try {
-            Product product = readForm(0);
 
-            service.addProduct(product);
+        try {
+            DeliveryAgent agent = readForm(0);
+
+            service.addAgent(agent);
 
             JOptionPane.showMessageDialog(
                     this,
-                    "Product added successfully. ID: "
-                            + product.getProductId()
+                    "Agent added successfully. ID: "
+                            + agent.getAgentId()
             );
 
             onClear();
@@ -102,7 +120,7 @@ public class ProductManagement extends BaseModulePanel {
             showWarning(ex.getMessage());
 
         } catch (SQLException ex) {
-            showError("Could not add product.", ex);
+            showError("Could not add the agent.", ex);
         }
     }
 
@@ -112,32 +130,34 @@ public class ProductManagement extends BaseModulePanel {
         Object idValue = selectedValue(0);
 
         if (idValue == null) {
-            showWarning("Select a product in the table first.");
+            showWarning("Select an agent in the table first.");
             return;
         }
 
         try {
-            Product product = readForm(
-                    Integer.parseInt(idValue.toString())
-            );
+            int id = Integer.parseInt(idValue.toString());
 
-            if (service.updateProduct(product)) {
+            DeliveryAgent agent = readForm(id);
+
+            if (service.updateAgent(agent)) {
+
                 JOptionPane.showMessageDialog(
-                        this, "Product updated successfully."
+                        this,
+                        "Agent updated successfully."
                 );
 
                 onClear();
                 loadTableData();
 
             } else {
-                showWarning("Product not found.");
+                showWarning("Agent not found.");
             }
 
         } catch (IllegalArgumentException ex) {
             showWarning(ex.getMessage());
 
         } catch (SQLException ex) {
-            showError("Could not update product.", ex);
+            showError("Could not update the agent.", ex);
         }
     }
 
@@ -147,28 +167,30 @@ public class ProductManagement extends BaseModulePanel {
         Object idValue = selectedValue(0);
 
         if (idValue == null) {
-            showWarning("Select a product first.");
+            showWarning("Select an agent first.");
             return;
         }
 
         try {
             int id = Integer.parseInt(idValue.toString());
 
-            if (service.deleteProduct(id)) {
+            if (service.deleteAgent(id)) {
+
                 JOptionPane.showMessageDialog(
-                        this, "Product deleted successfully."
+                        this,
+                        "Agent deleted successfully."
                 );
 
                 onClear();
                 loadTableData();
 
             } else {
-                showWarning("Product not found.");
+                showWarning("Agent not found.");
             }
 
         } catch (SQLException ex) {
             showError(
-                    "Could not delete product. It may be used by an order or stock record.",
+                    "Could not delete the agent. They may have delivery assignments.",
                     ex
             );
         }
@@ -176,72 +198,77 @@ public class ProductManagement extends BaseModulePanel {
 
     @Override
     protected void onClear() {
+
         txtId.setText("");
         txtName.setText("");
-        txtPrice.setText("");
-        txtDescription.setText("");
+        txtNic.setText("");
+        txtPhone.setText("");
+        txtEmail.setText("");
+        txtVehicleReg.setText("");
 
-        cmbCategory.setSelectedIndex(0);
-        spnEcoRating.setValue(3);
-        spnQuantity.setValue(0);
+        cmbVehicleType.setSelectedIndex(0);
+        cmbStatus.setSelectedItem(AgentStatus.AVAILABLE);
+        spnMaxLoad.setValue(100);
 
         tblData.clearSelection();
-        setStatus("Product form cleared.");
+
+        setStatus("Delivery agent form cleared.");
     }
 
     @Override
     protected void onSearch(String query) {
-        loadProducts(query.isBlank() ? null : query);
+        loadAgents(query.isBlank() ? null : query);
     }
 
-    private void loadProducts(String keyword) {
+    private void loadAgents(String keyword) {
+
         try {
-            List<Product> products = service.search(keyword);
+            List<DeliveryAgent> agents =
+                    service.search(keyword);
 
-            Object[][] rows = new Object[products.size()][7];
+            Object[][] rows = new Object[agents.size()][9];
 
-            for (int i = 0; i < products.size(); i++) {
-                Product p = products.get(i);
+            for (int i = 0; i < agents.size(); i++) {
+
+                DeliveryAgent a = agents.get(i);
+                Vehicle v = a.getVehicle();
 
                 rows[i] = new Object[]{
-                        p.getProductId(),
-                        p.getProductName(),
-                        p.getCategory(),
-                        p.getPrice(),
-                        p.getEcoRating(),
-                        p.getDescription(),
-                        p.getQuantity()
+                        a.getAgentId(),
+                        a.getName(),
+                        a.getNic(),
+                        a.getPhone(),
+                        a.getEmail(),
+                        v == null ? "" : v.getRegistrationNumber(),
+                        v == null ? "" : v.getType().getLabel(),
+                        v == null ? "" : v.getMaxLoadKg(),
+                        a.getStatus().getLabel()
                 };
             }
 
             setRows(rows);
 
         } catch (SQLException ex) {
-            showError("Could not load products.", ex);
+            showError("Could not load delivery agents.", ex);
         }
     }
 
-    private Product readForm(int id) {
+    private DeliveryAgent readForm(int id) {
 
-        double price;
+        Vehicle vehicle = new Vehicle(
+                txtVehicleReg.getText().trim().toUpperCase(),
+                (VehicleType) cmbVehicleType.getSelectedItem(),
+                (Integer) spnMaxLoad.getValue()
+        );
 
-        try {
-            price = Double.parseDouble(txtPrice.getText().trim());
-
-        } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException(
-                    "Price must be a valid number, e.g. 1850.00"
-            );
-        }
-
-        return new Product(
+        return new DeliveryAgent(
                 id,
                 txtName.getText().trim(),
-                (String) cmbCategory.getSelectedItem(),
-                price,
-                (Integer) spnEcoRating.getValue(),
-                txtDescription.getText().trim(),
-                (Integer) spnQuantity.getValue()
+                txtNic.getText().trim(),
+                txtPhone.getText().trim(),
+                txtEmail.getText().trim(),
+                vehicle,
+                (AgentStatus) cmbStatus.getSelectedItem()
         );
     }
 
@@ -261,30 +288,50 @@ public class ProductManagement extends BaseModulePanel {
                 String.valueOf(tableModel.getValueAt(row, 1))
         );
 
-        cmbCategory.setSelectedItem(
-                tableModel.getValueAt(row, 2)
+        txtNic.setText(
+                String.valueOf(tableModel.getValueAt(row, 2))
         );
 
-        txtPrice.setText(
+        txtPhone.setText(
                 String.valueOf(tableModel.getValueAt(row, 3))
         );
 
-        spnEcoRating.setValue(
-                tableModel.getValueAt(row, 4)
+        Object email = tableModel.getValueAt(row, 4);
+
+        txtEmail.setText(
+                email == null ? "" : email.toString()
         );
 
-        Object description = tableModel.getValueAt(row, 5);
-
-        txtDescription.setText(
-                description == null ? "" : description.toString()
+        txtVehicleReg.setText(
+                String.valueOf(tableModel.getValueAt(row, 5))
         );
 
-        spnQuantity.setValue(
-                tableModel.getValueAt(row, 6)
+        String type =
+                String.valueOf(tableModel.getValueAt(row, 6));
+
+        if (!type.isEmpty()) {
+            cmbVehicleType.setSelectedItem(
+                    VehicleType.fromLabel(type)
+            );
+        }
+
+        Object load = tableModel.getValueAt(row, 7);
+
+        if (load instanceof Number) {
+            spnMaxLoad.setValue(
+                    ((Number) load).intValue()
+            );
+        }
+
+        cmbStatus.setSelectedItem(
+                AgentStatus.fromLabel(
+                        String.valueOf(tableModel.getValueAt(row, 8))
+                )
         );
     }
 
     private void showWarning(String message) {
+
         JOptionPane.showMessageDialog(
                 this,
                 message,
@@ -294,6 +341,7 @@ public class ProductManagement extends BaseModulePanel {
     }
 
     private void showError(String message, SQLException ex) {
+
         ex.printStackTrace();
 
         JOptionPane.showMessageDialog(
