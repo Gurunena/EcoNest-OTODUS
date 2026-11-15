@@ -39,8 +39,8 @@ public final class DashboardCards {
         return List.of(
 
                 // Products module
-                StatCard.placeholder("Products", "products",
-                        Theme.TINT_SUCCESS, Theme.STATUS_SUCCESS),
+                new StatCard("Products", "products", Theme.TINT_SUCCESS, Theme.STATUS_SUCCESS,
+                        () -> String.valueOf(new com.econest.product.service.ProductService().getAllProducts().size())),
 
                 // Clients module
                 new StatCard("Clients", "clients", Theme.TINT_INFO, Theme.STATUS_INFO,
@@ -51,8 +51,8 @@ public final class DashboardCards {
                         Theme.TINT_DANGER, Theme.STATUS_DANGER, stats::lowStockItems),
 
                 // Delivery Agents module
-                StatCard.placeholder("Delivery agents", "agents",
-                        Theme.TINT_INFO, Theme.STATUS_INFO),
+                new StatCard("Delivery agents", "agents", Theme.TINT_INFO, Theme.STATUS_INFO,
+                        () -> String.valueOf(new com.econest.agent.service.DeliveryAgentService().getAllAgents().size())),
 
                 // Orders module
                 new StatCard("Pending orders", "orders",
@@ -67,7 +67,7 @@ public final class DashboardCards {
                         Theme.TINT_INFO, Theme.STATUS_INFO, stats::revenueThisMonth),
 
                 // Notifications module
-                new StatCard("Emails sent", "notifications", Theme.TINT_PENDING, Theme.STATUS_PENDING,
-                        () -> String.valueOf(new com.econest.notification.dao.NotificationDaoImpl().countSent())));
+                StatCard.placeholder("Notifications", "notifications",
+                        Theme.TINT_PENDING, Theme.STATUS_PENDING));
     }
 }
